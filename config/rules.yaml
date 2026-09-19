@@ -1,0 +1,118 @@
+# 10大类性能问题小区判定规则与指标门限配置
+rules:
+  - id: 1
+    code: "volte_high_drop"
+    name: "VoLTE高掉线小区"
+    network_type: "4G"
+    condition_desc: "VOLTE掉话率(QCI=1)>2% 且 话务量>1(ERL)，8小时内复现"
+    thresholds:
+      volte_drop_rate: 0.02
+      volte_traffic: 1.0
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 2
+    code: "vonr_flow_high_drop"
+    name: "VoNR业务Flow掉线高小区"
+    network_type: "5G"
+    condition_desc: "VoNR业务Flow掉线率(5QI1)>2% 且 话务量>0.5(ERL)，8小时内复现"
+    thresholds:
+      vonr_flow_drop_rate: 0.02
+      vonr_traffic: 0.5
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 3
+    code: "lte_high_drop"
+    name: "LTE掉线高小区"
+    network_type: "4G"
+    condition_desc: "小时级无线掉线率>2% 且 RRC最大连接数>100，8小时内复现"
+    thresholds:
+      wireless_drop_rate: 0.02
+      rrc_max_conn: 100
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 4
+    code: "sa_high_drop"
+    name: "SA高掉线小区"
+    network_type: "5G"
+    condition_desc: "小时级无线掉线率>2% 且 RRC最大连接数>100，8小时内复现"
+    thresholds:
+      sa_drop_rate: 0.02
+      rrc_max_conn: 100
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 5
+    code: "lte_low_setup"
+    name: "LTE接通低小区"
+    network_type: "4G"
+    condition_desc: "小时级无线接通率<98% 且 RRC最大连接数>100，8小时内复现"
+    thresholds:
+      wireless_setup_rate: 0.98
+      rrc_max_conn: 100
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 6
+    code: "sa_low_setup"
+    name: "SA低接通小区"
+    network_type: "5G"
+    condition_desc: "小时级无线接通率<98% 且 RRC最大连接数>100，8小时内复现"
+    thresholds:
+      sa_setup_rate: 0.98
+      rrc_max_conn: 100
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 7
+    code: "vonr_low_setup"
+    name: "VoNR无线接通率低"
+    network_type: "5G"
+    condition_desc: "小时级无线接通率(QCI=1)<95% 且 话务量>0.5(ERL)，8小时内复现"
+    thresholds:
+      vonr_setup_rate: 0.95
+      vonr_traffic: 0.5
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 8
+    code: "volte_low_setup"
+    name: "VoLTE无线接通低小区"
+    network_type: "4G"
+    condition_desc: "小时级无线接通率(QCI=1)<95% 且 话务量>1(ERL)，8小时内复现"
+    thresholds:
+      volte_setup_rate: 0.95
+      volte_traffic: 1.0
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 9
+    code: "lte_low_throughput"
+    name: "4G下行低速率小区"
+    network_type: "4G"
+    condition_desc: "下行PRB利用率>0.5 且 下行感知速率<1(Mbps)，8小时内复现"
+    thresholds:
+      dl_prb_util: 0.5
+      dl_perceived_rate: 1.0
+    window_hours: 8
+    repeat_count: 2
+
+  - id: 10
+    code: "sa_low_throughput"
+    name: "5G下行低速率小区"
+    network_type: "5G"
+    condition_desc: "下行PRB利用率>0.8 且 下行平均感知速率<5(Mbps) 且 最大连接数>100，8小时内复现"
+    thresholds:
+      dl_prb_util: 0.8
+      dl_user_rate: 5.0
+      rrc_max_conn: 100
+    window_hours: 8
+    repeat_count: 2
+
+# 周期考核规则定义
+cycle_rules:
+  weekly_start_weekday: 4
+  weekly_overclock_min_days: 2
+  weekly_overclock_min_hours: 5

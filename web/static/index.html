@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>性能超频小区监控平台</title>
+  <link rel="stylesheet" href="/static/libs/element-plus.css" />
+  <script src="/static/libs/vue.global.prod.js"></script>
+  <script src="/static/libs/element-plus.js"></script>
+  <script src="/static/libs/icons-vue.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f7fa; color: #303133; height: 100vh; overflow: hidden; }
+    #app { height: 100vh; display: flex; flex-direction: column; }
+    .app-header { height: 56px; background-color: #ffffff; border-bottom: 1px solid #dcdfe6; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; flex-shrink: 0; z-index: 10; }
+    .app-title { font-size: 18px; font-weight: 600; color: #1f2d3d; display: flex; align-items: center; gap: 8px; }
+    .app-status-bar { display: flex; align-items: center; gap: 16px; font-size: 13px; }
+    .app-body { display: flex; flex: 1; overflow: hidden; }
+    .app-sidebar { width: 220px; background-color: #ffffff; border-right: 1px solid #dcdfe6; display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar-menu { border-right: none; flex: 1; }
+    .sidebar-footer { padding: 12px; font-size: 12px; color: #909399; text-align: center; border-top: 1px solid #ebeef5; }
+    .app-content { flex: 1; padding: 20px; overflow-y: auto; background-color: #f0f2f5; }
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .kpi-card { background: #fff; padding: 16px 20px; border-radius: 6px; border: 1px solid #e4e7ed; }
+    .kpi-title { font-size: 13px; color: #909399; margin-bottom: 6px; }
+    .kpi-val { font-size: 24px; font-weight: bold; color: #303133; }
+    .kpi-val.highlight { color: #f56c6c; }
+    .filter-bar { background: #fff; padding: 14px 16px; border-radius: 6px; border: 1px solid #e4e7ed; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .table-container { background: #fff; padding: 16px; border-radius: 6px; border: 1px solid #e4e7ed; }
+    .tag-repeat { background-color: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold; }
+    .tag-normal { background-color: #f4f4f5; color: #909399; border: 1px solid #e9e9eb; border-radius: 4px; padding: 2px 6px; font-size: 11px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header class="app-header">
+    <div class="app-title">
+      <span>📶 性能超频小区监控平台</span>
+      <el-tag size="small" type="info">v1.0</el-tag>
+    </div>
+    <div class="app-status-bar">
+      <span>数据库: <strong>{{ dbEngine }}</strong></span>
+      <el-divider direction="vertical"></el-divider>
+      <span>调度状态: 
+        <el-tag :type="authInfo.global_status === 'ACTIVE' ? 'success' : 'danger'" size="small">
+          {{ authInfo.global_status === 'ACTIVE' ? '运行中 (ACTIVE)' : '等待认证 (STANDBY)' }}
+        </el-tag>
+      </span>
+      <el-divider direction="vertical"></el-divider>
+      <span>Cookie:
+        <el-tag :type="authInfo.cookie_status === 'VALID' ? 'success' : 'danger'" size="small" effect="dark">
+          {{ authInfo.cookie_status === 'VALID' ? '● 在线有效' : '● 已失效' }}
+        </el-tag>
+      </span>
+      <el-button size="small" type="primary" plain @click="openLoginDialog">登录续期</el-button>
+      <el-button size="small" :icon="Refresh" circle @click="refreshAuthStatus" title="刷新状态"></el-button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <aside class="app-sidebar">
+      <el-menu :default-active="activeNav" class="sidebar-menu" @select="handleNavSelect">
+        <el-menu-item index="latest">
+          <el-icon><Timer /></el-icon>
+          <span>最新时段监控</span>
+        </el-menu-item>
+        <el-menu-item index="daily">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>本日超频看板</span>
+        </el-menu-item>
+        <el-menu-item index="weekly">
+          <el-icon><Calendar /></el-icon>
+          <span>周考核 (五至四)</span>
+        </el-menu-item>
+        <el-menu-item index="tasks">
+          <el-icon><Operation /></el-icon>
+          <span>任务日志与补采</span>
+        </el-menu-item>
+      </el-menu>
+      <div class="sidebar-footer">
+        最后时段: {{ latestHour || '加载中...' }}
+      </div>
+    </aside>
+
+    <main class="app-content">
+      <!-- 视图 1: 最新时段监控 -->
+      <div v-if="activeNav === 'latest'">
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <div class="kpi-title">当前监控时段</div>
+            <div class="kpi-val" style="font-size: 18px;">{{ latestData.latest_hour }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">质差小区总数</div>
+            <div class="kpi-val">{{ latestData.total_issues }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">8小时复现超频网元</div>
+            <div class="kpi-val highlight">{{ latestData.repeated_8h_count }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">4G / 5G 占比</div>
+            <div class="kpi-val" style="font-size: 18px;">{{ latestData.g4_count }} / {{ latestData.g5_count }}</div>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <el-input v-model="latestSearch" placeholder="搜索小区名 / CGI..." style="width: 220px;" clearable size="small"></el-input>
+            <el-select v-model="selectedCity" placeholder="所属地市" clearable size="small" style="width: 130px;">
+              <el-option v-for="c in cityOptions" :key="c" :label="c" :value="c"></el-option>
+            </el-select>
+            <el-checkbox v-model="onlyRepeated" label="仅看8h复现超频" size="small"></el-checkbox>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <el-button size="small" :icon="Refresh" @click="fetchLatestData">刷新</el-button>
+            <el-button size="small" type="success" :icon="Download" @click="exportLatestExcel">导出Excel</el-button>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <el-table :data="filteredLatestRecords" stripe border style="width: 100%" max-height="540">
+            <el-table-column prop="start_time" label="时段" width="160"></el-table-column>
+            <el-table-column prop="network_type" label="制式" width="70" align="center">
+              <template #default="scope">
+                <el-tag :type="scope.row.network_type === '5G' ? 'success' : 'primary'" size="small">{{ scope.row.network_type }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="city" label="地市" width="80" align="center"></el-table-column>
+            <el-table-column prop="cell_name" label="小区名称" min-width="170"></el-table-column>
+            <el-table-column prop="cell_id" label="小区标识(CGI/NCGI)" width="180"></el-table-column>
+            <el-table-column prop="issue_type" label="问题类型" min-width="160">
+              <template #default="scope">
+                <span style="font-weight: 500;">{{ scope.row.issue_type }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="主指标 / 伴随门限" width="160">
+              <template #default="scope">
+                {{ scope.row.metric_value_1 }} / {{ scope.row.metric_value_2 }}
+              </template>
+            </el-table-column>
+            <el-table-column label="8h复现状态" width="140" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.repeat_count_8h > 0" class="tag-repeat">
+                  复现 ({{ scope.row.repeat_count_8h }}次)
+                </span>
+                <span v-else class="tag-normal">
+                  复现 (0次)
+                </span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+
+      <!-- 视图 2: 本日超频看板 -->
+      <div v-if="activeNav === 'daily'">
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <div class="kpi-title">本日统计日期</div>
+            <div class="kpi-val" style="font-size: 20px;">{{ dailyData.date }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">本日累计恶化小区</div>
+            <div class="kpi-val">{{ dailyData.total_degraded_cells }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">本日达标超频小区(复现≥3天)</div>
+            <div class="kpi-val highlight">{{ dailyData.total_overclock_cells }}</div>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <div style="font-weight: 600; margin-bottom: 12px; font-size: 15px;">本日重点恶化 TOP 小区清单</div>
+          <el-table :data="dailyData.top_cells" stripe border style="width: 100%" max-height="560">
+            <el-table-column type="index" label="排名" width="60" align="center"></el-table-column>
+            <el-table-column prop="city" label="地市" width="80" align="center"></el-table-column>
+            <el-table-column prop="network_type" label="制式" width="70" align="center"></el-table-column>
+            <el-table-column prop="cell_name" label="小区名称" min-width="180"></el-table-column>
+            <el-table-column prop="cell_id" label="小区CGI/NCGI" width="180"></el-table-column>
+            <el-table-column label="主要问题类型" min-width="220">
+              <template #default="scope">
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                  <el-tag 
+                    v-for="t in (scope.row.issue_types || [scope.row.issue_type])" 
+                    :key="t" 
+                    size="small" 
+                    effect="plain"
+                    type="warning">
+                    {{ t }}
+                  </el-tag>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="repeat_days" label="复现天数" width="110" sortable align="center">
+              <template #default="scope">
+                <el-tag :type="scope.row.repeat_days >= 3 ? 'danger' : 'info'" size="small">
+                  {{ scope.row.repeat_days }} 天
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="occurrences" label="本日恶化时段" width="120" sortable align="center">
+              <template #default="scope">
+                <span style="font-weight: bold; color: #e6a23c;">{{ scope.row.occurrences }} 次</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="是否超频" width="100" align="center">
+              <template #default="scope">
+                <el-tag :type="scope.row.is_overclock ? 'danger' : 'info'" size="small">
+                  {{ scope.row.is_overclock ? '超频' : '轻度' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="first_time" label="首次恶化" width="160"></el-table-column>
+            <el-table-column prop="last_time" label="最近恶化" width="160"></el-table-column>
+          </el-table>
+        </div>
+      </div>
+
+      <!-- 视图 3: 周考核 (上周五至本周四) -->
+      <div v-if="activeNav === 'weekly'">
+        <div class="kpi-row">
+          <div class="kpi-card" style="grid-column: span 2;">
+            <div class="kpi-title">考核周期</div>
+            <div class="kpi-val" style="font-size: 18px;">{{ weeklyData.cycle_title }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">周期波及小区</div>
+            <div class="kpi-val">{{ weeklyData.total_impacted_cells }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">重点整治网元 (≥2天或≥5次)</div>
+            <div class="kpi-val highlight">{{ weeklyData.focus_overclock_cells_count }}</div>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <span style="font-size: 14px; font-weight: 500;">重点考核治理清单 (依据网优周期规范)</span>
+          <el-button size="small" type="success" :icon="Download" @click="exportWeeklyExcel">导出周考核Excel</el-button>
+        </div>
+
+        <div class="table-container">
+          <el-table :data="weeklyData.focus_cells" stripe border style="width: 100%" max-height="540">
+            <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
+            <el-table-column prop="city" label="所属地市" width="90" align="center"></el-table-column>
+            <el-table-column prop="network_type" label="制式" width="70" align="center"></el-table-column>
+            <el-table-column prop="cell_name" label="小区名称" min-width="180"></el-table-column>
+            <el-table-column prop="cell_id" label="小区CGI/NCGI" width="180"></el-table-column>
+            <el-table-column prop="issue_type" label="核心恶化问题" min-width="160"></el-table-column>
+            <el-table-column prop="active_days" label="恶化天数" width="100" align="center" sortable>
+              <template #default="scope">
+                <el-tag type="danger" size="small">{{ scope.row.active_days }} 天</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="total_occurrences" label="恶化时段总数" width="130" align="center" sortable></el-table-column>
+            <el-table-column prop="first_time" label="首次恶化时间" width="160"></el-table-column>
+            <el-table-column prop="last_time" label="最近恶化时间" width="160"></el-table-column>
+          </el-table>
+        </div>
+      </div>
+
+      <!-- 视图 4: 任务日志与补采 -->
+      <div v-if="activeNav === 'tasks'">
+        <div class="filter-bar">
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <span style="font-size: 13px;">手动补采区间:</span>
+            <el-date-picker v-model="backfillRange" type="datetimerange" range-separator="至" start-placeholder="开始时段" end-placeholder="结束时段" format="YYYY-MM-DD HH:00:00" value-format="YYYY-MM-DD HH:00:00" size="small"></el-date-picker>
+            <el-button type="primary" size="small" @click="submitBackfill">触发断点补采</el-button>
+          </div>
+          <el-button size="small" :icon="Refresh" @click="fetchTaskLogs">刷新日志</el-button>
+        </div>
+
+        <div class="table-container">
+          <div style="font-weight: 600; margin-bottom: 12px; font-size: 15px;">后台小时抽取与分析流水</div>
+          <el-table :data="taskLogs" stripe border style="width: 100%" max-height="560">
+            <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+            <el-table-column prop="task_name" label="任务标识" width="160"></el-table-column>
+            <el-table-column prop="data_hour" label="业务时段" width="180"></el-table-column>
+            <el-table-column prop="row_count" label="处理小区数" width="110" align="center"></el-table-column>
+            <el-table-column prop="status" label="状态" width="110" align="center">
+              <template #default="scope">
+                <el-tag :type="scope.row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">{{ scope.row.status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="duration_sec" label="耗时(秒)" width="100" align="center"></el-table-column>
+            <el-table-column prop="created_at" label="执行完成时间" width="180"></el-table-column>
+          </el-table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <el-dialog v-model="loginDialogVisible" title="NQI 会话认证与登录续期" width="400px">
+    <el-form :model="loginForm" label-width="70px" size="default">
+      <el-form-item label="账号">
+        <el-input v-model="loginForm.username" placeholder="请输入NQI账号"></el-input>
+      </el-form-item>
+      <el-form-item label="密码">
+        <el-input v-model="loginForm.password" type="password" show-password placeholder="请输入密码"></el-input>
+      </el-form-item>
+      <el-form-item label="验证码">
+        <div style="display: flex; gap: 8px;">
+          <el-input v-model="loginForm.captcha" placeholder="验证码"></el-input>
+          <div style="width: 100px; height: 32px; background: #eee; cursor: pointer; display: flex; align-items: center; justify-content: center;" @click="refreshCaptcha">
+            <img v-if="captchaImg" :src="captchaImg" style="width: 100%; height: 100%; object-fit: cover;" />
+            <span v-else style="font-size: 11px; color: #888;">点击获取</span>
+          </div>
+        </div>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <span class="dialog-footer">
+        <el-button @click="loginDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="loginLoading" @click="submitLogin">提交续期</el-button>
+      </span>
+    </template>
+  </el-dialog>
+</div>
+
+<script>
+  const { createApp, ref, computed, onMounted } = Vue;
+  const { ElMessage } = ElementPlus;
+  const { Timer, DataAnalysis, Calendar, Operation, Refresh, Download } = ElementPlusIconsVue;
+
+  const app = createApp({
+    setup() {
+      const activeNav = ref('latest');
+      const dbEngine = ref('SQLite / MySQL');
+      const authInfo = ref({ global_status: 'ACTIVE', cookie_status: 'VALID' });
+      const latestHour = ref('');
+      
+      const latestData = ref({ latest_hour: '', total_issues: 0, repeated_8h_count: 0, g4_count: 0, g5_count: 0, issue_records: [] });
+      const latestSearch = ref('');
+      const selectedCity = ref('');
+      const onlyRepeated = ref(false);
+
+      const dailyData = ref({ date: '', total_degraded_cells: 0, total_overclock_cells: 0, top_cells: [] });
+      const weeklyData = ref({ cycle_title: '', total_impacted_cells: 0, focus_overclock_cells_count: 0, focus_cells: [] });
+      const taskLogs = ref([]);
+      const backfillRange = ref([]);
+
+      const loginDialogVisible = ref(false);
+      const loginLoading = ref(false);
+      const loginForm = ref({ username: 'dwlianchangli', password: '***REMOVED***', captcha: '' });
+      const captchaImg = ref('');
+
+      const cityOptions = computed(() => {
+        const set = new Set();
+        (latestData.value.issue_records || []).forEach(r => { if (r.city) set.add(r.city); });
+        return Array.from(set);
+      });
+
+      const filteredLatestRecords = computed(() => {
+        return (latestData.value.issue_records || []).filter(r => {
+          const matchWord = !latestSearch.value || (r.cell_name && r.cell_name.includes(latestSearch.value)) || (r.cell_id && r.cell_id.includes(latestSearch.value));
+          const matchCity = !selectedCity.value || r.city === selectedCity.value;
+          const matchRepeated = !onlyRepeated.value || r.is_repeated_8h === 1;
+          return matchWord && matchCity && matchRepeated;
+        });
+      });
+
+      const handleNavSelect = (key) => {
+        activeNav.value = key;
+        if (key === 'latest') fetchLatestData();
+        else if (key === 'daily') fetchDailyData();
+        else if (key === 'weekly') fetchWeeklyData();
+        else if (key === 'tasks') fetchTaskLogs();
+      };
+
+      const refreshAuthStatus = async () => {
+        try {
+          const res = await fetch('/api/auth/status').then(r => r.json());
+          authInfo.value = res;
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      const fetchLatestData = async () => {
+        try {
+          const res = await fetch('/api/monitor/latest').then(r => r.json());
+          latestData.value = res;
+          latestHour.value = res.latest_hour;
+        } catch (e) {
+          ElMessage.error('获取最新时段失败');
+        }
+      };
+
+      const fetchDailyData = async () => {
+        try {
+          const res = await fetch('/api/monitor/daily').then(r => r.json());
+          dailyData.value = res;
+        } catch (e) {
+          ElMessage.error('获取本日超频失败');
+        }
+      };
+
+      const fetchWeeklyData = async () => {
+        try {
+          const res = await fetch('/api/monitor/weekly').then(r => r.json());
+          weeklyData.value = res;
+        } catch (e) {
+          ElMessage.error('获取周考核数据失败');
+        }
+      };
+
+      const fetchTaskLogs = async () => {
+        try {
+          const res = await fetch('/api/tasks/logs').then(r => r.json());
+          taskLogs.value = res;
+        } catch (e) {
+          ElMessage.error('获取任务流水失败');
+        }
+      };
+
+      const exportLatestExcel = () => {
+        window.open('/api/export/latest', '_blank');
+      };
+
+      const exportWeeklyExcel = () => {
+        window.open('/api/export/weekly', '_blank');
+      };
+
+      const submitBackfill = async () => {
+        if (!backfillRange.value || backfillRange.value.length !== 2) {
+          ElMessage.warning('请选择补采的起止时间范围');
+          return;
+        }
+        try {
+          const res = await fetch('/api/tasks/backfill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ start_hour: backfillRange.value[0], end_hour: backfillRange.value[1] })
+          }).then(r => r.json());
+          ElMessage.success(res.message);
+        } catch (e) {
+          ElMessage.error('补采请求提交失败');
+        }
+      };
+
+      const openLoginDialog = () => {
+        loginDialogVisible.value = true;
+        refreshCaptcha();
+      };
+
+      const refreshCaptcha = async () => {
+        try {
+          const res = await fetch('/api/auth/captcha').then(r => r.json());
+          captchaImg.value = res.captcha || '';
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      const submitLogin = async () => {
+        loginLoading.value = true;
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loginForm.value)
+          }).then(r => r.json());
+          if (res.success) {
+            ElMessage.success(res.message);
+            loginDialogVisible.value = false;
+            refreshAuthStatus();
+          } else {
+            ElMessage.error(res.message);
+            refreshCaptcha();
+          }
+        } catch (e) {
+          ElMessage.error('登录提交异常');
+        } finally {
+          loginLoading.value = false;
+        }
+      };
+
+      onMounted(() => {
+        refreshAuthStatus();
+        fetchLatestData();
+      });
+
+      return {
+        activeNav, dbEngine, authInfo, latestHour,
+        latestData, latestSearch, selectedCity, onlyRepeated, cityOptions, filteredLatestRecords,
+        dailyData, weeklyData, taskLogs, backfillRange,
+        loginDialogVisible, loginLoading, loginForm, captchaImg,
+        handleNavSelect, refreshAuthStatus, fetchLatestData, fetchDailyData, fetchWeeklyData, fetchTaskLogs,
+        exportLatestExcel, exportWeeklyExcel, submitBackfill, openLoginDialog, refreshCaptcha, submitLogin,
+        Timer, DataAnalysis, Calendar, Operation, Refresh, Download
+      };
+    }
+  });
+
+  for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+    app.component(key, component);
+  }
+  app.use(ElementPlus);
+  app.mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+# 系统基础配置
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: true
+
+# 数据库配置 (支持 MySQL 主用与 SQLite 备用平滑切换)
+database:
+  # 可选: 'mysql' 或 'sqlite'
+  active: "sqlite"
+
+  # MySQL 主用配置
+  mysql:
+    host: "127.0.0.1"
+    port: 3306
+    user: "root"
+    password: "YOUR_PASSWORD_HERE"
+    database: "cell_overclock_monitor"
+    charset: "utf8mb4"
+    pool_size: 10
+    max_overflow: 20
+    pool_recycle: 3600
+
+  # SQLite 备用配置 (免安装、轻量开箱即用)
+  sqlite:
+    db_path: "data/monitor.db"
+    wal_mode: true
+
+# NQI 系统接入配置
+nqi:
+  base_url: "https://nqi.gmcc.net:20443"
+  account: "YOUR_ACCOUNT_HERE"
+  password: "YOUR_PASSWORD_HERE"
+
+# 定时调度与保留周期
+scheduler:
+  enabled: true
+  # 每小时第 25 分钟触发拉取上一小时数据 (例如 10:25 采集 09:00~10:00)
+  cron_minute: 25
+  # 采集挂起后等待重试间隔(秒)
+  retry_interval_sec: 300
+
+# 数据保留天数
+data_retention_days: 90
