@@ -2,6 +2,7 @@ import uvicorn
 import yaml
 import os
 import sys
+import shutil
 import ctypes
 from loguru import logger
 
@@ -31,8 +32,38 @@ def disable_quickedit():
         logger.warning(f"禁用控制台快速编辑模式失败(不影响服务运行): {e}")
 
 
+def prepare_runtime():
+    """打包(exe)运行时初始化。
+
+    PyInstaller 打包后，代码内所有资源都按相对路径访问(config/web/data/logs)，
+    因此这里将工作目录切换到可执行文件所在目录，并在首次运行时用示例配置
+    初始化 config.yaml，保证绿色便携目录结构开箱即用。
+    源码直接运行时不做任何处理。
+    """
+    if not getattr(sys, "frozen", False):
+        return
+
+    base_dir = os.path.dirname(os.path.abspath(sys.executable))
+    os.chdir(base_dir)
+
+    # 首次运行生成可编辑的 config.yaml (从示例配置复制)
+    config_path = os.path.join(base_dir, "config", "config.yaml")
+    example_path = os.path.join(base_dir, "config", "config.example.yaml")
+    if not os.path.exists(config_path) and os.path.exists(example_path):
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        shutil.copyfile(example_path, config_path)
+        logger.info(f"已初始化配置文件(请按需修改): {config_path}")
+
+    # 预建运行期目录
+    for rel in ("data", os.path.join("data", "exports"),
+                os.path.join("data", "cookies"), os.path.join("data", "captchas"),
+                "logs"):
+        os.makedirs(os.path.join(base_dir, rel), exist_ok=True)
+
+
 def main():
     disable_quickedit()
+    prepare_runtime()
 
     config_path = "config/config.yaml"
     host = "0.0.0.0"

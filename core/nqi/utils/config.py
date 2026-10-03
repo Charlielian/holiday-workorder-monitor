@@ -7,6 +7,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def get_project_root():
     """获取当前监控项目根目录"""
+    if getattr(sys, "frozen", False):
+        # PyInstaller 打包后: 以可执行文件所在目录作为项目根目录
+        return os.path.dirname(os.path.abspath(sys.executable))
     current_file = os.path.abspath(__file__)
     # utils -> nqi -> core -> root
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))

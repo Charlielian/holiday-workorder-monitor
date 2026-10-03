@@ -1,0 +1,69 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: 打包 Windows 可执行程序
+    runs-on: windows-latest
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # 代码内统一使用相对路径(config/web/data/logs)，打包后以 exe 所在目录为根，
+      # 故采用 onedir，并把 web、config 复制到 exe 同级目录，形成绿色便携文件夹。
+      - name: PyInstaller 打包 (绿色便携目录版)
+        run: >
+          pyinstaller --noconfirm --clean --onedir
+          --name holiday-workorder-monitor
+          --hidden-import web.app
+          --collect-all uvicorn
+          --collect-all apscheduler
+          main.py
+
+      - name: 组装绿色便携目录
+        shell: pwsh
+        run: |
+          $dist = "dist/holiday-workorder-monitor"
+          Copy-Item -Recurse -Force "web"    "$dist/web"
+          Copy-Item -Recurse -Force "config" "$dist/config"
+          New-Item -ItemType Directory -Force -Path "$dist/data", "$dist/logs" | Out-Null
+
+      - name: 压缩为 zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/holiday-workorder-monitor/*" `
+            -DestinationPath "holiday-workorder-monitor-windows.zip" -Force
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: holiday-workorder-monitor-windows
+          path: holiday-workorder-monitor-windows.zip
+          if-no-files-found: error
+
+      - name: 发布 Release (仅 tag 触发)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: holiday-workorder-monitor-windows.zip
