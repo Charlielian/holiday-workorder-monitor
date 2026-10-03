@@ -39,6 +39,7 @@ jobs:
           --hidden-import web.app
           --collect-all uvicorn
           --collect-all apscheduler
+          --collect-submodules Cryptodome
           main.py
 
       - name: 组装绿色便携目录

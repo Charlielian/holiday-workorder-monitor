@@ -76,9 +76,9 @@
       </span>
       <el-divider direction="vertical"></el-divider>
       <span>Cookie:
-        <el-tag :type="authInfo.cookie_status === 'VALID' ? 'success' : 'danger'" size="small" effect="dark">
-          {{ authInfo.cookie_status === 'VALID' ? '● 在线有效' : '● 已失效' }}
-        </el-tag>
+        <el-tag v-if="authInfo.cookie_status === 'VALID'" type="success" size="small" effect="dark">● 在线有效</el-tag>
+        <el-tag v-else-if="authInfo.cookie_status === 'UNABLE_INIT'" type="warning" size="small" effect="dark">● 组件未就绪</el-tag>
+        <el-tag v-else type="danger" size="small" effect="dark">● 已失效/需登录</el-tag>
       </span>
       <el-button size="small" type="primary" plain @click="openLoginDialog">登录续期</el-button>
       <el-button size="small" :icon="Refresh" circle @click="refreshAuthStatus" title="刷新状态"></el-button>
@@ -513,7 +513,7 @@
     setup() {
       const activeNav = ref('workorder');
       const dbEngine = ref('SQLite');
-      const authInfo = ref({ global_status: 'ACTIVE', cookie_status: 'VALID' });
+      const authInfo = ref({ global_status: 'STANDBY_AUTH', cookie_status: 'UNKNOWN' });
 
       // ---- 平台登录 (普通用户/管理员) ----
       const isLoggedIn = ref(false);
@@ -526,7 +526,8 @@
       const loginDialogVisible = ref(false);
       const loginLoading = ref(false);
       const showSmsInput = ref(false);
-      const loginForm = ref({ username: 'dwlianchangli', password: '***REMOVED***', captcha: '', msg_code: '' });
+      // 账号仅用于界面默认展示, 密码必须每次手输, 不在前端持久化
+      const loginForm = ref({ username: '', password: '', captcha: '', msg_code: '' });
       const captchaImg = ref('');
 
       // 统一封装的带令牌请求
@@ -615,7 +616,12 @@
       const openLoginDialog = () => {
         loginDialogVisible.value = true;
         showSmsInput.value = false;
+        loginForm.value.password = "";
         loginForm.value.msg_code = "";
+        // 若后端配置了默认 NQI 账号则预填账号 (密码永远手输)
+        if (!loginForm.value.username) {
+          loginForm.value.username = authInfo.value.nqi_username || '';
+        }
         refreshCaptcha();
       };
 
@@ -917,6 +923,11 @@
       };
 
       const openWoCollectDialog = async () => {
+        if (authInfo.value.cookie_status !== 'VALID') {
+          ElMessage.warning('大数据平台会话未就绪或已失效，请先点击右上角「登录续期」完成认证');
+          openLoginDialog();
+          return;
+        }
         let sDate = woSummaryRange.value?.[0] || fmtDateStr(initWoStartDate);
         let eDate = woSummaryRange.value?.[1] || fmtDateStr(initWoEndDate);
         const cityParam = (woSummaryCities.value && woSummaryCities.value.length === 1) ? woSummaryCities.value[0] : '';

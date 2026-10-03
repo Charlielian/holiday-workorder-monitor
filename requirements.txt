@@ -10,3 +10,5 @@ requests>=2.31.0
 python-multipart>=0.0.9
 loguru>=0.7.0
 lxml>=5.0.0
+# NQI 单点登录 RSA/AES 加密依赖 (PyInstaller 打包 exe 必须显式声明，否则 pycryptodome 不会被打入)
+pycryptodome>=3.19.0

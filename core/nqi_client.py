@@ -7,6 +7,7 @@ class NqiClient:
     内聚自研 NQI 鉴权核心，支持会话持久化、会话校验、验证码刷新与分阶段登录
     """
     def __init__(self):
+        self.init_error = None
         try:
             from core.nqi.auth import LoginManager
             from core.nqi.utils.config import load_config
@@ -22,6 +23,7 @@ class NqiClient:
             logger.info("内聚版 NqiClient 登录核心加载成功 (无外部项目依赖)")
         except Exception as e:
             logger.error(f"内聚版 NqiClient 初始化失败: {e}")
+            self.init_error = str(e)
             self.auth_manager = None
 
     def check_session_status(self) -> Dict[str, object]:

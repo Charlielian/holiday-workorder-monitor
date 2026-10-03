@@ -25,7 +25,18 @@ class AuthService:
         """
         获取当前系统的 Cookie 状态与全局运行状态
         """
-        return cls._compute_cookie_status()
+        status = cls._compute_cookie_status()
+        client = cls.get_client()
+        # 返回已配置的 NQI 账号名供登录弹窗预填 (仅账号名, 密码绝不输出)
+        status["nqi_username"] = ""
+        if client.auth_manager is not None:
+            status["nqi_username"] = client.auth_manager.username or ""
+        # UNABLE_INIT 表示加密/登录组件未就绪 (如打包缺失 pycryptodome)，覆盖数据库中过期的乐观值
+        if client.auth_manager is None:
+            status["cookie_status"] = "UNABLE_INIT"
+            status["global_status"] = "STANDBY_AUTH"
+            status["client_error"] = getattr(client, "init_error", None) or "登录组件初始化失败"
+        return status
 
     @classmethod
     def _compute_cookie_status(cls) -> Dict[str, Any]:
@@ -36,8 +47,8 @@ class AuthService:
             last_check = session.query(ETLCheckpoint).filter_by(checkpoint_key="COOKIE_LAST_CHECK").first()
 
             return {
-                "global_status": g_status.checkpoint_value if g_status else "ACTIVE",
-                "cookie_status": c_status.checkpoint_value if c_status else "VALID",
+                "global_status": g_status.checkpoint_value if g_status else "STANDBY_AUTH",
+                "cookie_status": c_status.checkpoint_value if c_status else "UNKNOWN",
                 "last_success_hour": last_h.checkpoint_value if last_h else "无",
                 "last_check_time": last_check.checkpoint_value if last_check else "未检测",
             }
@@ -54,13 +65,21 @@ class AuthService:
             last_check = session.query(ETLCheckpoint).filter_by(checkpoint_key="COOKIE_LAST_CHECK").first()
             g_status = session.query(ETLCheckpoint).filter_by(checkpoint_key="GLOBAL_STATUS").first()
 
+            if not c_status:
+                c_status = ETLCheckpoint(checkpoint_key="COOKIE_STATUS", checkpoint_value="UNKNOWN")
+                session.add(c_status)
+            if not g_status:
+                g_status = ETLCheckpoint(checkpoint_key="GLOBAL_STATUS", checkpoint_value="STANDBY_AUTH")
+                session.add(g_status)
+
             if res.get("valid"):
-                if c_status: c_status.checkpoint_value = "VALID"
-                if g_status and g_status.checkpoint_value == "STANDBY_AUTH":
+                c_status.checkpoint_value = "VALID"
+                if g_status.checkpoint_value == "STANDBY_AUTH":
                     g_status.checkpoint_value = "ACTIVE"
             else:
-                if c_status: c_status.checkpoint_value = "EXPIRED"
-                if g_status and g_status.checkpoint_value == "ACTIVE":
+                if c_status.checkpoint_value != "UNABLE_INIT":
+                    c_status.checkpoint_value = "EXPIRED"
+                if g_status.checkpoint_value == "ACTIVE":
                     g_status.checkpoint_value = "STANDBY_AUTH"
 
             if last_check:
@@ -73,6 +92,8 @@ class AuthService:
     def get_captcha_base64(cls) -> Optional[str]:
         """获取验证码的 Base64 图片"""
         client = cls.get_client()
+        if client.auth_manager is None:
+            return None
         img_bytes = client.get_captcha_image()
         if img_bytes:
             b64 = base64.b64encode(img_bytes).decode("utf-8")

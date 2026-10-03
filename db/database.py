@@ -102,8 +102,8 @@ class DatabaseManager:
         with self.get_session() as session:
             from db.models import ETLCheckpoint
             defaults = [
-                ("GLOBAL_STATUS", "ACTIVE", "调度器运行状态: ACTIVE / STANDBY_AUTH"),
-                ("COOKIE_STATUS", "VALID", "NQI Cookie会话状态: VALID / EXPIRED / UNKNOWN"),
+                ("GLOBAL_STATUS", "STANDBY_AUTH", "调度器运行状态: ACTIVE / STANDBY_AUTH"),
+                ("COOKIE_STATUS", "UNKNOWN", "NQI Cookie会话状态: VALID / EXPIRED / UNKNOWN"),
                 ("COOKIE_LAST_CHECK", "", "最后一次检测Cookie时间"),
             ]
             for key, val, desc in defaults:

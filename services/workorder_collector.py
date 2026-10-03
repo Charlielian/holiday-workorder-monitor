@@ -76,6 +76,12 @@ class WorkOrderCollector:
     def _get_session(cls):
         """复用现有的 NQI 登录态 Session"""
         client = AuthService.get_client()
+        if client.auth_manager is None:
+            raise RuntimeError(
+                "NQI 登录组件未就绪"
+                + (f" (初始化失败: {client.init_error})" if getattr(client, "init_error", None) else "")
+                + "，请先在界面点击「登录续期」完成认证"
+            )
         return client.auth_manager.sess
 
     @classmethod
@@ -107,7 +113,12 @@ class WorkOrderCollector:
     @classmethod
     def _get_username(cls) -> str:
         client = AuthService.get_client()
-        return client.auth_manager.username or "dwlianchangli"
+        if client.auth_manager is None:
+            raise RuntimeError("NQI 登录组件未就绪，请先完成登录续期")
+        username = client.auth_manager.username or ""
+        if not username:
+            raise RuntimeError("NQI 账号未配置 (config.yaml nqi.account 为空)，请先配置或完成登录续期")
+        return username
 
     @classmethod
     def strip_html_tags(cls, text: str) -> str:
