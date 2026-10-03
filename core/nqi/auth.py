@@ -245,3 +245,105 @@ class LoginManager:
             import traceback
             traceback.print_exc()
             return False
+
+    # ------------------------------------------------------------------
+    # Web 端无 UI 登录接口（分阶段，供 AuthService / Web 路由调用）
+    # ------------------------------------------------------------------
+    def load_cookies(self) -> bool:
+        """加载本地已保存的 Cookie 到当前 session。返回是否成功加载。"""
+        try:
+            saved = load_cookie(self.username)
+            if saved:
+                self.sess.cookies = saved
+                return True
+        except Exception as e:
+            logger.warning("加载 Cookie 失败: %s", e)
+        return False
+
+    def validate_session(self) -> bool:
+        """检查当前 session 的 Cookie 是否仍然有效。"""
+        return self._check_session()
+
+    def get_captcha(self) -> bytes | None:
+        """拉取最新图形验证码字节流。"""
+        try:
+            res = self.sess.get(CAPTCHA_URL, timeout=TIMEOUT_SHORT)
+            if res.status_code == 200:
+                return res.content
+        except Exception as e:
+            logger.warning("获取图形验证码失败: %s", e)
+        return None
+
+    def login_with_credentials(self, username: str, password: str,
+                               captcha: str = "", msg_code: str = "",
+                               send_sms: bool = True) -> tuple[bool, str]:
+        """
+        面向 Web 的无 UI 分阶段登录。
+
+        阶段一（必须）：username+password+captcha → 校验图形码 & 加密凭据
+        阶段二（可选）：send_sms=True 时发送短信验证码
+        阶段三（最终）：msg_code 提交 → 校验 CASTGC → 保存 Cookie
+
+        返回 (success, message)。
+        - 若只完成阶段一/二，返回 (False, "NEED_SMS_CODE")，调用方应继续提交 msg_code 重试。
+        - 阶段三完成返回 (True, "...") 或 (False, "短信验证码错误")
+        """
+        try:
+            res = self.sess.get(LOGIN_URL, headers=HEADERS, timeout=TIMEOUT_SHORT)
+            res.encoding = 'utf-8'
+            html = etree.HTML(res.text)
+
+            execution = html.xpath('//*[@id="fm1"]/div[4]/input[1]')[0].attrib.get('value')
+            public_key = html.xpath('//*[@type="text/javascript"]/text()')[0].split('setPublicKey("')[1].split('")')[0]
+
+            username_e = rsa_encrypt(username, public_key)
+            password_e = rsa_encrypt(password, public_key)
+
+            if not captcha:
+                return False, "请输入图形验证码"
+
+            # ---------- 阶段一：图形验证码 ----------
+            data = {'password': password_e, 'loginId': username_e, 'captcha': captcha}
+            res_cfg = self.sess.post(GET_CONFIG_URL, data=json.dumps(data),
+                                     headers=HEADERS_JSON, timeout=TIMEOUT_SHORT)
+            result = json.loads(res_cfg.text)
+            if result.get('code') != '1':
+                return False, "图形验证码错误，请刷新后重试"
+
+            # ---------- 阶段二：发送短信验证码（可选） ----------
+            if send_sms and not msg_code:
+                data_sms = {'loginId': username_e, 'password': password_e}
+                res_sms = self.sess.post(SEND_CODE_URL, data=json.dumps(data_sms),
+                                         headers=HEADERS_JSON, timeout=TIMEOUT_SHORT)
+                try:
+                    sms_res = json.loads(res_sms.text)
+                    if sms_res.get('msg') != 'success':
+                        logger.warning("短信验证码发送响应异常: %s", sms_res)
+                except Exception:
+                    pass
+                return False, "NEED_SMS_CODE"
+
+            if not msg_code:
+                return False, "NEED_SMS_CODE"
+
+            # ---------- 阶段三：提交短信验证码 ----------
+            login_data = {
+                'password': password_e,
+                'username': username_e,
+                'msgCode': msg_code,
+                'captcha': captcha,
+                'uuid': '',
+                'execution': execution,
+                '_eventId': 'submit',
+                'geolocation': ''
+            }
+            self.sess.post(LOGIN_URL, data=login_data, headers=HEADERS, timeout=TIMEOUT_SHORT)
+
+            if self.sess.cookies.get('CASTGC'):
+                save_cookie(self.sess.cookies, username)
+                return True, "登录成功"
+            return False, "短信验证码错误"
+
+        except Exception as e:
+            logger.exception("Web 登录异常")
+            return False, f"登录异常: {e}"

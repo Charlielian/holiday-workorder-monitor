@@ -34,6 +34,15 @@ data/*.db-wal
 data/exports/
 data/cache/
 
+# Runtime session credentials (NQI 平台 Cookie / 验证码缓存) — 严禁上传
+data/cookies/
+data/captchas/
+
+# Internal documents (公司内部资料, 不入库)
+副本省市无线网络综合调度中台对接管理细则（优化专业）-v1.1.docx
+大数据平台单点登录算法与流程规范.md
+集团工单与省内工单拉取规范与业务流程文档.md
+
 # Logs
 logs/*
 *.log

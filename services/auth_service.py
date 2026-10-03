@@ -25,6 +25,10 @@ class AuthService:
         """
         获取当前系统的 Cookie 状态与全局运行状态
         """
+        return cls._compute_cookie_status()
+
+    @classmethod
+    def _compute_cookie_status(cls) -> Dict[str, Any]:
         with db_manager.get_session() as session:
             g_status = session.query(ETLCheckpoint).filter_by(checkpoint_key="GLOBAL_STATUS").first()
             c_status = session.query(ETLCheckpoint).filter_by(checkpoint_key="COOKIE_STATUS").first()
@@ -76,10 +80,12 @@ class AuthService:
         return None
 
     @classmethod
-    def submit_login(cls, username: str, password: str, captcha: str = "") -> Dict[str, Any]:
-        """提交登录凭据更新 Cookie"""
+    def submit_login(cls, username: str, password: str, captcha: str = "", msg_code: str = "") -> Dict[str, Any]:
+        """提交登录凭据更新 Cookie (支持分阶段短信码)"""
         client = cls.get_client()
-        success, msg = client.login_with_credentials(username, password, captcha)
+        success, msg = client.login_with_credentials(username, password, captcha, msg_code)
+        if msg == "NEED_SMS_CODE":
+            return {"success": False, "need_sms_code": True, "message": "图形验证码已通过，短信验证码已发送，请查收后输入"}
         if success:
             with db_manager.get_session() as session:
                 c_status = session.query(ETLCheckpoint).filter_by(checkpoint_key="COOKIE_STATUS").first()

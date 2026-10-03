@@ -1,140 +1,95 @@
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Text, Index, UniqueConstraint
+    Column, Integer, BigInteger, String, Float, DateTime, Text, Index, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.ext.compiler import compiles
 
 Base = declarative_base()
 
-class ETLTaskLog(Base):
-    """ETL任务流水日志表"""
-    __tablename__ = "etl_task_log"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    task_name = Column(String(64), nullable=False)        # 4G_KPI / 5G_CU / 5G_DU
-    data_hour = Column(String(32), nullable=False)        # '2026-09-19 08:00:00'
-    row_count = Column(Integer, default=0)
-    status = Column(String(32), nullable=False)           # SUCCESS / FAILED / PAUSED_NEED_AUTH
-    error_message = Column(Text, nullable=True)
-    duration_sec = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("task_name", "data_hour", name="uq_task_hour"),
-        Index("idx_etl_hour_status", "data_hour", "status"),
-    )
+# SQLite 不支持 BIGINT AUTOINCREMENT 主键 (建表会生成非自增 BIGINT, 插入报错)。
+# 让 BigInteger 在 SQLite 方言下编译为 INTEGER, 获得 rowid 自增语义。
+@compiles(BigInteger, "sqlite")
+def _biginteger_to_integer(element, compiler, **kw):
+    return "INTEGER"
 
 
 class ETLCheckpoint(Base):
-    """系统检查点与运行状态表 (支持断点续采与会话感知)"""
+    """系统检查点与运行状态表 (会话状态感知)"""
     __tablename__ = "etl_checkpoint"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    checkpoint_key = Column(String(64), unique=True, nullable=False)  # LAST_SUCCESS_HOUR / GLOBAL_STATUS
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    checkpoint_key = Column(String(64), unique=True, nullable=False)  # GLOBAL_STATUS / COOKIE_STATUS 等
     checkpoint_value = Column(String(255), nullable=True)
     description = Column(String(255), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class KPI4GHourly(Base):
-    """4G小时级性能指标表"""
-    __tablename__ = "kpi_4g_hourly"
+class SysUser(Base):
+    """平台登录用户表 (普通用户/管理员)"""
+    __tablename__ = "sys_user"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    start_time = Column(String(32), nullable=False)       # '2026-09-19 08:00:00'
-    cgi = Column(String(64), nullable=False)
-    cell_name = Column(String(128), nullable=True)
-    city = Column(String(64), nullable=True)
-    vendor = Column(String(64), nullable=True)
-    rrc_max_conn = Column(Float, default=0.0)             # RRC最大连接数
-    wireless_drop_rate = Column(Float, default=0.0)       # 无线掉线率(%)
-    wireless_setup_rate = Column(Float, default=0.0)      # 无线接通率(%)
-    volte_drop_rate = Column(Float, default=0.0)          # VoLTE掉话率(%)
-    volte_traffic = Column(Float, default=0.0)            # VoLTE话务量(ERL)
-    volte_setup_rate = Column(Float, default=0.0)         # VoLTE接通率(%)
-    dl_prb_util = Column(Float, default=0.0)              # 下行PRB利用率(0-1或0-100)
-    dl_perceived_rate = Column(Float, default=0.0)        # 下行感知速率(Mbps)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    username = Column(String(64), unique=True, nullable=False)   # 登录账号
+    password = Column(String(128), nullable=False)               # 明文存储密码 (如需可改hash)
+    role = Column(String(16), default="user")                    # 'admin' / 'user'
+    display_name = Column(String(64), nullable=True)             # 显示名
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    __table_args__ = (
-        UniqueConstraint("start_time", "cgi", name="uq_4g_time_cgi"),
-        Index("idx_4g_time_cgi", "start_time", "cgi"),
-        Index("idx_4g_cgi_time", "cgi", "start_time"),
-    )
 
+class WorkOrderRecord(Base):
+    """工单记录表（统一存储集团工单与省内工单）"""
+    __tablename__ = "work_order_record"
 
-class KPI5GHourly(Base):
-    """5G小时级性能指标表 (CU与DU关联对齐后)"""
-    __tablename__ = "kpi_5g_hourly"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    start_time = Column(String(32), nullable=False)       # '2026-09-19 08:00:00'
-    ncgi = Column(String(64), nullable=False)
-    cell_name = Column(String(128), nullable=True)
-    city = Column(String(64), nullable=True)
-    vendor = Column(String(64), nullable=True)
-    rrc_max_conn = Column(Float, default=0.0)             # RRC最大连接数
-    sa_drop_rate = Column(Float, default=0.0)             # SA无线掉线率(%)
-    sa_setup_rate = Column(Float, default=0.0)            # SA无线接通率(%)
-    vonr_flow_drop_rate = Column(Float, default=0.0)      # VoNR业务Flow掉线率(%)
-    vonr_traffic = Column(Float, default=0.0)             # VoNR话务量(ERL)
-    vonr_setup_rate = Column(Float, default=0.0)          # VoNR无线接通率(%)
-    dl_prb_util = Column(Float, default=0.0)              # 下行PRB利用率(来自DU)
-    dl_user_rate = Column(Float, default=0.0)             # 下行平均感知速率(Mbps, 来自CU)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_type = Column(String(16), nullable=False)       # 'group' (集团工单) / 'province' (省内工单)
+    order_code = Column(String(96), nullable=False)       # 工单唯一编号 (order_code / code)
+    cluster_code = Column(String(64), nullable=True)      # 集团: 聚类工单序号
+    city = Column(String(32), nullable=True, index=True)  # 地市中文名 (如 阳江, 广州)
+    title = Column(String(512), nullable=True)            # 省内: title / 集团: 问题小区名
+    cell_id = Column(String(64), nullable=True)           # 集团: 问题小区 CGI
+    cell_name = Column(String(255), nullable=True)        # 小区名称
+    status = Column(String(64), nullable=True)            # 状态中文 (集团: 当前状态 / 省内: woStatusName)
+    is_finished = Column(Integer, default=0)              # 是否已办结: 0 未办结, 1 已办结
+    is_ids = Column(Integer, default=0)                   # 是否IDS工单: 0 否, 1 是 (人工标记, 标记后不参与统计计算)
+    is_manual_finished = Column(Integer, default=0)       # 是否人工标记已处理: 0 否, 1 是 (人工标记; 自动拉取证明已办结时重置为0)
+    current_node = Column(String(64), nullable=True)      # 当前流程节点
+    process_key = Column(String(64), nullable=True)       # 流程定义Key (如 proc_gtssxn)
+    process_name = Column(String(128), nullable=True)     # 流程名称 (如 高铁实时性能工单流程)
+    special_label = Column(String(128), nullable=True)    # 专项标签 (如 集团假日保障)
+    create_time = Column(String(32), nullable=True)       # 工单生成/派发时间 'YYYY-MM-DD HH:MM:SS'
+    finish_time = Column(String(32), nullable=True)       # 办结时间
+    extra_json = Column(Text, nullable=True)              # 原始行数据 JSON 快照 (全量保留以便导出)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("start_time", "ncgi", name="uq_5g_time_ncgi"),
-        Index("idx_5g_time_ncgi", "start_time", "ncgi"),
-        Index("idx_5g_ncgi_time", "ncgi", "start_time"),
-    )
-
-
-class CellIssueRecord(Base):
-    """性能问题小区明细记录表 (每次评估产生的单时段质差事件)"""
-    __tablename__ = "cell_issue_records"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    start_time = Column(String(32), nullable=False)       # '2026-09-19 08:00:00'
-    network_type = Column(String(16), nullable=False)     # 4G / 5G
-    cell_id = Column(String(64), nullable=False)          # cgi / ncgi
-    cell_name = Column(String(128), nullable=True)
-    city = Column(String(64), nullable=True)
-    issue_type = Column(String(64), nullable=False)       # 如 'VoLTE高掉线小区'
-    metric_value_1 = Column(Float, nullable=True)         # 主指标值 (如掉线率)
-    metric_value_2 = Column(Float, nullable=True)         # 门限/伴随值 (如话务量或最大连接数)
-    is_repeated_8h = Column(Integer, default=0)           # 8小时内是否复现 (1:是, 0:否)
-    repeat_count_8h = Column(Integer, default=1)          # 过去8小时内累计恶化次数
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("start_time", "cell_id", "issue_type", name="uq_issue_record"),
-        Index("idx_issue_time_type", "start_time", "issue_type"),
-        Index("idx_issue_cell_time", "cell_id", "start_time"),
-        Index("idx_issue_repeated", "is_repeated_8h", "start_time"),
-    )
-
-
-class CellOverclockSummary(Base):
-    """周期超频统计沉淀表 (本日/本周考核汇总)"""
-    __tablename__ = "cell_overclock_summary"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    cycle_type = Column(String(16), nullable=False)       # 'DAILY' (本日) / 'WEEKLY' (上周五至本周四)
-    cycle_key = Column(String(32), nullable=False)        # 日期 '2026-09-19' 或周标签 '2026-W38'
-    network_type = Column(String(16), nullable=False)     # 4G / 5G
-    cell_id = Column(String(64), nullable=False)
-    cell_name = Column(String(128), nullable=True)
-    city = Column(String(64), nullable=True)
-    issue_type = Column(String(64), nullable=False)
-    occurrences_count = Column(Integer, default=1)        # 恶化时段总数
-    active_days_count = Column(Integer, default=1)        # 恶化天数
-    max_repeat_in_8h = Column(Integer, default=1)         # 8小时窗口内最大复现数
-    first_time = Column(String(32), nullable=True)
-    last_time = Column(String(32), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint("cycle_type", "cycle_key", "cell_id", "issue_type", name="uq_cycle_summary"),
-        Index("idx_summary_cycle", "cycle_type", "cycle_key"),
+        UniqueConstraint("order_type", "order_code", name="uq_wo_type_code"),
+        Index("idx_wo_city_time", "city", "create_time"),
+        Index("idx_wo_type_time", "order_type", "create_time"),
+        Index("idx_wo_status", "order_type", "is_finished"),
+    )
+
+
+class WorkOrderCollectLog(Base):
+    """工单采集任务日志表"""
+    __tablename__ = "work_order_collect_log"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    scope = Column(String(16), nullable=False)            # 'all' / 'group' / 'province'
+    start_date = Column(String(32), nullable=False)
+    end_date = Column(String(32), nullable=False)
+    city = Column(String(32), nullable=True)
+    pages_fetched = Column(Integer, default=0)
+    rows_fetched = Column(Integer, default=0)
+    rows_inserted = Column(Integer, default=0)
+    rows_updated = Column(Integer, default=0)
+    status = Column(String(16), default="SUCCESS")        # SUCCESS / FAILED / PARTIAL
+    error_message = Column(Text, nullable=True)
+    duration_sec = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_wo_log_created", "created_at"),
     )

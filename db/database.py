@@ -9,12 +9,12 @@ from loguru import logger
 from db.models import Base
 
 class DatabaseManager:
-    """数据库连接与生命周期管理器 (支持 MySQL 与 SQLite 平滑切换)"""
+    """数据库连接与生命周期管理器 (仅 SQLite 本地模式)"""
 
     def __init__(self, config_path: str = "config/config.yaml"):
         self.config_path = config_path
         self.config = self._load_config()
-        self.active_db = self.config.get("database", {}).get("active", "sqlite").lower()
+        self.active_db = "sqlite"
         self.engine = self._create_engine()
         self.SessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         self._init_db()
@@ -27,68 +27,82 @@ class DatabaseManager:
 
     def _create_engine(self):
         db_conf = self.config.get("database", {})
-        if self.active_db == "mysql":
-            mysql_conf = db_conf.get("mysql", {})
-            user = mysql_conf.get("user", "root")
-            password = mysql_conf.get("password", "")
-            host = mysql_conf.get("host", "127.0.0.1")
-            port = mysql_conf.get("port", 3306)
-            dbname = mysql_conf.get("database", "cell_overclock_monitor")
-            charset = mysql_conf.get("charset", "utf8mb4")
-            
-            # 构建 MySQL 连接 URL
-            url = f"mysql+pymysql://{user}:{password}@{host}:{port}/{dbname}?charset={charset}"
-            logger.info(f"正在连接 MySQL 数据库: {host}:{port}/{dbname}")
-            
-            engine = create_engine(
-                url,
-                pool_size=mysql_conf.get("pool_size", 10),
-                max_overflow=mysql_conf.get("max_overflow", 20),
-                pool_recycle=mysql_conf.get("pool_recycle", 3600),
-                pool_pre_ping=True,
-                echo=False,
-            )
-            return engine
-        else:
-            # SQLite 本地模式
-            sqlite_conf = db_conf.get("sqlite", {})
-            db_path = sqlite_conf.get("db_path", "data/monitor.db")
-            os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-            
-            url = f"sqlite:///{os.path.abspath(db_path)}"
-            logger.info(f"正在连接 SQLite 数据库: {db_path}")
-            
-            engine = create_engine(url, echo=False)
-            
-            # 开启 SQLite WAL 模式及优化参数
-            if sqlite_conf.get("wal_mode", True):
-                @event.listens_for(engine, "connect")
-                def set_sqlite_pragma(dbapi_connection, connection_record):
-                    cursor = dbapi_connection.cursor()
-                    cursor.execute("PRAGMA journal_mode=WAL")
-                    cursor.execute("PRAGMA synchronous=NORMAL")
-                    cursor.execute("PRAGMA cache_size=-64000") # 64MB 缓存
-                    cursor.execute("PRAGMA temp_store=MEMORY")
-                    cursor.close()
-            return engine
+        sqlite_conf = db_conf.get("sqlite", {})
+        db_path = sqlite_conf.get("db_path", "data/monitor.db")
+        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+
+        url = f"sqlite:///{os.path.abspath(db_path)}"
+        logger.info(f"正在连接 SQLite 数据库: {db_path}")
+
+        engine = create_engine(url, echo=False)
+
+        # 开启 SQLite WAL 模式及优化参数
+        if sqlite_conf.get("wal_mode", True):
+            @event.listens_for(engine, "connect")
+            def set_sqlite_pragma(dbapi_connection, connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.execute("PRAGMA cache_size=-64000")  # 64MB 缓存
+                cursor.execute("PRAGMA temp_store=MEMORY")
+                cursor.close()
+        return engine
 
     def _init_db(self):
-        """自动建表与初始化系统检查点"""
+        """自动建表、增量补列与初始化系统检查点"""
         try:
             Base.metadata.create_all(bind=self.engine)
-            logger.info(f"数据库表结构校验/初始化完成 (当前引擎: {self.active_db})")
+            self._migrate_add_columns()
+            logger.info("数据库表结构校验/初始化完成 (SQLite)")
             self._init_default_checkpoints()
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
             raise
+
+    def _migrate_add_columns(self):
+        """
+        轻量列迁移: 逐列检查 ORM 模型与真实表结构差异，
+        对新增的标量列执行 ALTER TABLE ADD COLUMN。
+        """
+        from db.models import Base
+
+        def _existing_cols(table):
+            with self.engine.connect() as conn:
+                rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+                return {r[1] for r in rows}
+
+        for table_name, table in Base.metadata.tables.items():
+            existing = _existing_cols(table_name)
+            if not existing:
+                continue
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                col_type = col.type.compile(self.engine.dialect)
+                ddl = f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}"
+
+                # 依据 ORM 默认值给出安全的新列默认值(仅标量字面量；callable 如 datetime.utcnow 跳过)
+                default = None
+                if col.default is not None and not getattr(col.default, "is_callable", False):
+                    default = col.default.arg
+                if isinstance(default, bool):
+                    ddl += f" DEFAULT {1 if default else 0}"
+                elif isinstance(default, (int, float)):
+                    ddl += f" DEFAULT {default}"
+                elif isinstance(default, str):
+                    safe = default.replace("'", "''")
+                    ddl += f" DEFAULT '{safe}'"
+
+                with self.engine.begin() as conn:
+                    conn.execute(text(ddl))
+                logger.info(f"[迁移] 表 {table_name} 新增列 {col.name} ({col_type})")
 
     def _init_default_checkpoints(self):
         """初始化检查点状态"""
         with self.get_session() as session:
             from db.models import ETLCheckpoint
             defaults = [
-                ("GLOBAL_STATUS", "ACTIVE", "调度器运行状态: ACTIVE / STANDBY_AUTH / BACKFILLING"),
-                ("LAST_SUCCESS_HOUR", "", "最后一次拉取并计算成功的完整小时时段"),
+                ("GLOBAL_STATUS", "ACTIVE", "调度器运行状态: ACTIVE / STANDBY_AUTH"),
                 ("COOKIE_STATUS", "VALID", "NQI Cookie会话状态: VALID / EXPIRED / UNKNOWN"),
                 ("COOKIE_LAST_CHECK", "", "最后一次检测Cookie时间"),
             ]

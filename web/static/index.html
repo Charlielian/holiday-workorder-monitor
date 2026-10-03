@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>性能超频小区监控平台</title>
+  <title>节假日监控工单监控</title>
   <link rel="stylesheet" href="/static/libs/element-plus.css" />
   <script src="/static/libs/vue.global.prod.js"></script>
   <script src="/static/libs/element-plus.js"></script>
@@ -27,21 +27,49 @@
     .kpi-val.highlight { color: #f56c6c; }
     .filter-bar { background: #fff; padding: 14px 16px; border-radius: 6px; border: 1px solid #e4e7ed; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
     .table-container { background: #fff; padding: 16px; border-radius: 6px; border: 1px solid #e4e7ed; }
-    .tag-repeat { background-color: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold; }
-    .tag-normal { background-color: #f4f4f5; color: #909399; border: 1px solid #e9e9eb; border-radius: 4px; padding: 2px 6px; font-size: 11px; }
+    /* ---- 平台登录页 ---- */
+    .login-page { height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#1f2d3d 0%,#2c3e50 60%,#3a5f7d 100%); }
+    .login-card { width: 380px; background: #fff; border-radius: 10px; padding: 34px 34px 28px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+    .login-title { font-size: 20px; font-weight: 700; color: #1f2d3d; text-align: center; margin-bottom: 4px; }
+    .login-sub { font-size: 12px; color: #909399; text-align: center; margin-bottom: 24px; }
+    .role-tip { margin-top: 10px; font-size: 12px; color: #909399; text-align: center; line-height: 1.6; }
   </style>
 </head>
 <body>
 <div id="app">
+  <!-- ============ 平台登录页 ============ -->
+  <div v-if="!isLoggedIn" class="login-page">
+    <div class="login-card">
+      <div class="login-title">📶 节假日监控工单监控</div>
+      <div class="login-sub">请使用平台账号登录</div>
+      <el-form :model="platformForm">
+        <el-form-item>
+          <el-input v-model="platformForm.username" placeholder="账号" prefix-icon="User" @keyup.enter="submitPlatformLogin"></el-input>
+        </el-form-item>
+        <el-form-item>
+          <el-input v-model="platformForm.password" type="password" placeholder="密码" show-password prefix-icon="Lock" @keyup.enter="submitPlatformLogin"></el-input>
+        </el-form-item>
+        <el-form-item style="margin-bottom: 8px;">
+          <el-button type="primary" style="width: 100%;" :loading="platformLoading" @click="submitPlatformLogin">登 录</el-button>
+        </el-form-item>
+      </el-form>
+      <div class="role-tip">
+        默认账号：admin / admin123　　或　user / user123
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 主界面 ============ -->
+  <template v-else>
   <header class="app-header">
     <div class="app-title">
-      <span>📶 性能超频小区监控平台</span>
+      <span>📶 节假日监控工单监控</span>
       <el-tag size="small" type="info">v1.0</el-tag>
     </div>
     <div class="app-status-bar">
       <span>数据库: <strong>{{ dbEngine }}</strong></span>
       <el-divider direction="vertical"></el-divider>
-      <span>调度状态: 
+      <span>调度状态:
         <el-tag :type="authInfo.global_status === 'ACTIVE' ? 'success' : 'danger'" size="small">
           {{ authInfo.global_status === 'ACTIVE' ? '运行中 (ACTIVE)' : '等待认证 (STANDBY)' }}
         </el-tag>
@@ -54,317 +82,519 @@
       </span>
       <el-button size="small" type="primary" plain @click="openLoginDialog">登录续期</el-button>
       <el-button size="small" :icon="Refresh" circle @click="refreshAuthStatus" title="刷新状态"></el-button>
+      <el-divider direction="vertical"></el-divider>
+      <span style="display:flex;align-items:center;gap:6px;">
+        <el-tag :type="currentUser.role === 'admin' ? 'danger' : 'primary'" size="small" effect="plain">
+          {{ currentUser.role === 'admin' ? '管理员' : '普通用户' }}
+        </el-tag>
+        <span>{{ currentUser.display_name }}</span>
+      </span>
+      <el-button size="small" type="info" plain @click="logoutPlatform">退出登录</el-button>
     </div>
   </header>
 
   <div class="app-body">
     <aside class="app-sidebar">
       <el-menu :default-active="activeNav" class="sidebar-menu" @select="handleNavSelect">
-        <el-menu-item index="latest">
-          <el-icon><Timer /></el-icon>
-          <span>最新时段监控</span>
-        </el-menu-item>
-        <el-menu-item index="daily">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>本日超频看板</span>
-        </el-menu-item>
-        <el-menu-item index="weekly">
-          <el-icon><Calendar /></el-icon>
-          <span>周考核 (五至四)</span>
-        </el-menu-item>
-        <el-menu-item index="tasks">
-          <el-icon><Operation /></el-icon>
-          <span>任务日志与补采</span>
+        <el-menu-item index="workorder">
+          <el-icon><Tickets /></el-icon>
+          <span>工单监控</span>
         </el-menu-item>
       </el-menu>
-      <div class="sidebar-footer">
-        最后时段: {{ latestHour || '加载中...' }}
-      </div>
+      <div class="sidebar-footer">数据来源: 集团方案库 / 省内优化流程</div>
     </aside>
 
     <main class="app-content">
-      <!-- 视图 1: 最新时段监控 -->
-      <div v-if="activeNav === 'latest'">
-        <div class="kpi-row">
-          <div class="kpi-card">
-            <div class="kpi-title">当前监控时段</div>
-            <div class="kpi-val" style="font-size: 18px;">{{ latestData.latest_hour }}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-title">质差小区总数</div>
-            <div class="kpi-val">{{ latestData.total_issues }}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-title">8小时复现超频网元</div>
-            <div class="kpi-val highlight">{{ latestData.repeated_8h_count }}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-title">4G / 5G 占比</div>
-            <div class="kpi-val" style="font-size: 18px;">{{ latestData.g4_count }} / {{ latestData.g5_count }}</div>
-          </div>
-        </div>
+      <!-- 视图: 工单监控 (汇总页面 / 集团工单 / 省内工单) -->
+      <div v-if="activeNav === 'workorder'">
+        <el-tabs v-model="woTab" type="border-card" @tab-click="handleWoTabClick" style="background: transparent; border: none; box-shadow: none;">
+          <!-- 子标签 1: 汇总页面 -->
+          <el-tab-pane label="📊 工单汇总统计" name="summary">
+            <!-- 筛选栏 -->
+            <div class="filter-bar">
+              <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <span style="font-size: 13px; font-weight: 600;">地市筛选:</span>
+                <el-select v-model="woSummaryCities" multiple collapse-tags collapse-tags-tooltip clearable
+                           size="small" placeholder="全省全部 (可多选)" style="width: 220px;" @change="fetchWoSummary">
+                  <el-option v-for="c in woCities" :key="c" :label="c" :value="c"></el-option>
+                </el-select>
 
-        <div class="filter-bar">
-          <div style="display: flex; gap: 12px; align-items: center;">
-            <el-input v-model="latestSearch" placeholder="搜索小区名 / CGI..." style="width: 220px;" clearable size="small"></el-input>
-            <el-select v-model="selectedCity" placeholder="所属地市" clearable size="small" style="width: 130px;">
-              <el-option v-for="c in cityOptions" :key="c" :label="c" :value="c"></el-option>
-            </el-select>
-            <el-checkbox v-model="onlyRepeated" label="仅看8h复现超频" size="small"></el-checkbox>
-          </div>
-          <div style="display: flex; gap: 10px;">
-            <el-button size="small" :icon="Refresh" @click="fetchLatestData">刷新</el-button>
-            <el-button size="small" type="success" :icon="Download" @click="exportLatestExcel">导出Excel</el-button>
-          </div>
-        </div>
+                <span style="font-size: 13px; font-weight: 600; margin-left: 8px;">派发/生成时间:</span>
+                <el-date-picker v-model="woSummaryRange" type="daterange" size="small"
+                                range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期"
+                                format="YYYY-MM-DD" value-format="YYYY-MM-DD" :clearable="false"
+                                @change="fetchWoSummary"></el-date-picker>
 
-        <div class="table-container">
-          <el-table :data="filteredLatestRecords" stripe border style="width: 100%" max-height="540">
-            <el-table-column prop="start_time" label="时段" width="160"></el-table-column>
-            <el-table-column prop="network_type" label="制式" width="70" align="center">
-              <template #default="scope">
-                <el-tag :type="scope.row.network_type === '5G' ? 'success' : 'primary'" size="small">{{ scope.row.network_type }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="city" label="地市" width="80" align="center"></el-table-column>
-            <el-table-column prop="cell_name" label="小区名称" min-width="170"></el-table-column>
-            <el-table-column prop="cell_id" label="小区标识(CGI/NCGI)" width="180"></el-table-column>
-            <el-table-column prop="issue_type" label="问题类型" min-width="160">
-              <template #default="scope">
-                <span style="font-weight: 500;">{{ scope.row.issue_type }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="主指标 / 伴随门限" width="160">
-              <template #default="scope">
-                {{ scope.row.metric_value_1 }} / {{ scope.row.metric_value_2 }}
-              </template>
-            </el-table-column>
-            <el-table-column label="8h复现状态" width="140" align="center">
-              <template #default="scope">
-                <span v-if="scope.row.repeat_count_8h > 0" class="tag-repeat">
-                  复现 ({{ scope.row.repeat_count_8h }}次)
+                <el-button type="primary" size="small" :icon="Refresh" :loading="woSummaryLoading" @click="fetchWoSummary">
+                  查询统计
+                </el-button>
+              </div>
+
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <span style="font-size: 12px; color: #909399;">
+                  最近采集: {{ woSummaryData.last_collect_time || '暂无' }} (后台每 5 分钟自动拉取)
                 </span>
-                <span v-else class="tag-normal">
-                  复现 (0次)
-                </span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </div>
+                <el-button size="small" type="warning" plain :loading="woCollectLoading" @click="openWoCollectDialog">
+                  手动增量采集
+                </el-button>
+                <el-button size="small" type="success" :icon="Download" @click="exportWo('all')">
+                  导出全部工单Excel
+                </el-button>
+              </div>
+            </div>
 
-      <!-- 视图 2: 本日超频看板 -->
-      <div v-if="activeNav === 'daily'">
-        <div class="kpi-row">
-          <div class="kpi-card">
-            <div class="kpi-title">本日统计日期</div>
-            <div class="kpi-val" style="font-size: 20px;">{{ dailyData.date }}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-title">本日累计恶化小区</div>
-            <div class="kpi-val">{{ dailyData.total_degraded_cells }}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-title">本日达标超频小区(复现≥3天)</div>
-            <div class="kpi-val highlight">{{ dailyData.total_overclock_cells }}</div>
-          </div>
-        </div>
-
-        <div class="table-container">
-          <div style="font-weight: 600; margin-bottom: 12px; font-size: 15px;">本日重点恶化 TOP 小区清单</div>
-          <el-table :data="dailyData.top_cells" stripe border style="width: 100%" max-height="560">
-            <el-table-column type="index" label="排名" width="60" align="center"></el-table-column>
-            <el-table-column prop="city" label="地市" width="80" align="center"></el-table-column>
-            <el-table-column prop="network_type" label="制式" width="70" align="center"></el-table-column>
-            <el-table-column prop="cell_name" label="小区名称" min-width="180"></el-table-column>
-            <el-table-column prop="cell_id" label="小区CGI/NCGI" width="180"></el-table-column>
-            <el-table-column label="主要问题类型" min-width="220">
-              <template #default="scope">
-                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                  <el-tag 
-                    v-for="t in (scope.row.issue_types || [scope.row.issue_type])" 
-                    :key="t" 
-                    size="small" 
-                    effect="plain"
-                    type="warning">
-                    {{ t }}
-                  </el-tag>
+            <!-- KPI 卡片栏 -->
+            <div class="kpi-row" v-loading="woSummaryLoading">
+              <div class="kpi-card">
+                <div class="kpi-title">集团工单总数 (方案库)</div>
+                <div class="kpi-val" style="color: #409eff;">{{ (woSummaryData.cards?.group?.total || 0).toLocaleString() }}</div>
+                <div style="font-size: 12px; color: #67c23a; margin-top: 4px;">
+                  已处理: <strong>{{ woSummaryData.cards?.group?.finished || 0 }}</strong>
+                  <span style="color: #909399; margin: 0 4px;">|</span>
+                  <span style="color: #e6a23c;">未处理: {{ woSummaryData.cards?.group?.unfinished || 0 }}</span>
+                  <span style="color: #909399; margin: 0 4px;">|</span>
+                  处理率: <strong style="color: #409eff;">{{ woSummaryData.cards?.group?.finish_rate || 0 }}%</strong>
                 </div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="repeat_days" label="复现天数" width="110" sortable align="center">
-              <template #default="scope">
-                <el-tag :type="scope.row.repeat_days >= 3 ? 'danger' : 'info'" size="small">
-                  {{ scope.row.repeat_days }} 天
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="occurrences" label="本日恶化时段" width="120" sortable align="center">
-              <template #default="scope">
-                <span style="font-weight: bold; color: #e6a23c;">{{ scope.row.occurrences }} 次</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="是否超频" width="100" align="center">
-              <template #default="scope">
-                <el-tag :type="scope.row.is_overclock ? 'danger' : 'info'" size="small">
-                  {{ scope.row.is_overclock ? '超频' : '轻度' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="first_time" label="首次恶化" width="160"></el-table-column>
-            <el-table-column prop="last_time" label="最近恶化" width="160"></el-table-column>
-          </el-table>
-        </div>
-      </div>
+              </div>
 
-      <!-- 视图 3: 周考核 (上周五至本周四) -->
-      <div v-if="activeNav === 'weekly'">
-        <div class="kpi-row">
-          <div class="kpi-card" style="grid-column: span 2;">
-            <div class="kpi-title">考核周期</div>
-            <div class="kpi-val" style="font-size: 18px;">{{ weeklyData.cycle_title }}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-title">周期波及小区</div>
-            <div class="kpi-val">{{ weeklyData.total_impacted_cells }}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-title">重点整治网元 (≥2天或≥5次)</div>
-            <div class="kpi-val highlight">{{ weeklyData.focus_overclock_cells_count }}</div>
-          </div>
-        </div>
+              <div class="kpi-card">
+                <div class="kpi-title">省内工单总数 (优化流程)</div>
+                <div class="kpi-val" style="color: #67c23a;">{{ (woSummaryData.cards?.province?.total || 0).toLocaleString() }}</div>
+                <div style="font-size: 12px; color: #67c23a; margin-top: 4px;">
+                  已办结: <strong>{{ woSummaryData.cards?.province?.finished || 0 }}</strong>
+                  <span style="color: #909399; margin: 0 4px;">|</span>
+                  <span style="color: #e6a23c;">未办结: {{ woSummaryData.cards?.province?.unfinished || 0 }}</span>
+                  <span style="color: #909399; margin: 0 4px;">|</span>
+                  办结率: <strong style="color: #67c23a;">{{ woSummaryData.cards?.province?.finish_rate || 0 }}%</strong>
+                </div>
+                <div v-if="woSummaryData.cards?.province?.ids_excluded" style="font-size: 12px; color: #909399; margin-top: 3px;">
+                  已排除 IDS 工单 <strong>{{ woSummaryData.cards.province.ids_excluded }}</strong> 单 (不参与计算)
+                </div>
+              </div>
 
-        <div class="filter-bar">
-          <span style="font-size: 14px; font-weight: 500;">重点考核治理清单 (依据网优周期规范)</span>
-          <el-button size="small" type="success" :icon="Download" @click="exportWeeklyExcel">导出周考核Excel</el-button>
-        </div>
+              <div class="kpi-card">
+                <div class="kpi-title">工单合计总数 (集团+省内)</div>
+                <div class="kpi-val highlight">{{ (woSummaryData.cards?.total?.total || 0).toLocaleString() }}</div>
+                <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+                  已完成: <strong style="color: #67c23a;">{{ woSummaryData.cards?.total?.finished || 0 }}</strong> (集团已处理+省内办结)
+                  <span style="color: #909399; margin: 0 4px;">|</span>
+                  待处理: <strong style="color: #f56c6c;">{{ woSummaryData.cards?.total?.unfinished || 0 }}</strong>
+                </div>
+              </div>
 
-        <div class="table-container">
-          <el-table :data="weeklyData.focus_cells" stripe border style="width: 100%" max-height="540">
-            <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
-            <el-table-column prop="city" label="所属地市" width="90" align="center"></el-table-column>
-            <el-table-column prop="network_type" label="制式" width="70" align="center"></el-table-column>
-            <el-table-column prop="cell_name" label="小区名称" min-width="180"></el-table-column>
-            <el-table-column prop="cell_id" label="小区CGI/NCGI" width="180"></el-table-column>
-            <el-table-column prop="issue_type" label="核心恶化问题" min-width="160"></el-table-column>
-            <el-table-column prop="active_days" label="恶化天数" width="100" align="center" sortable>
-              <template #default="scope">
-                <el-tag type="danger" size="small">{{ scope.row.active_days }} 天</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="total_occurrences" label="恶化时段总数" width="130" align="center" sortable></el-table-column>
-            <el-table-column prop="first_time" label="首次恶化时间" width="160"></el-table-column>
-            <el-table-column prop="last_time" label="最近恶化时间" width="160"></el-table-column>
-          </el-table>
-        </div>
-      </div>
+              <div class="kpi-card">
+                <div class="kpi-title">工单综合完成率</div>
+                <div class="kpi-val" style="color: #529b2e;">{{ woSummaryData.cards?.total?.finish_rate || 0 }}%</div>
+                <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+                  当前统计地市: <strong style="color: #303133;">{{ summaryCitiesLabel }}</strong>
+                </div>
+              </div>
+            </div>
 
-      <!-- 视图 4: 任务日志与补采 -->
-      <div v-if="activeNav === 'tasks'">
-        <div class="filter-bar">
-          <div style="display: flex; gap: 12px; align-items: center;">
-            <span style="font-size: 13px;">手动补采区间:</span>
-            <el-date-picker v-model="backfillRange" type="datetimerange" range-separator="至" start-placeholder="开始时段" end-placeholder="结束时段" format="YYYY-MM-DD HH:00:00" value-format="YYYY-MM-DD HH:00:00" size="small"></el-date-picker>
-            <el-button type="primary" size="small" @click="submitBackfill">触发断点补采</el-button>
-          </div>
-          <el-button size="small" :icon="Refresh" @click="fetchTaskLogs">刷新日志</el-button>
-        </div>
+            <!-- 下方布局：左侧各地市分布明细表，右侧最新工单流转动态 -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
+              <!-- 各地市分布统计 -->
+              <div class="table-container">
+                <div style="font-weight: 600; font-size: 15px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                  <span>🏙️ 各地市工单分布与处理/办结情况 ({{ woSummaryData.city_stats?.length || 0 }} 个地市)</span>
+                  <span style="font-size: 12px; color: #909399; font-weight: normal;">按工单总数降序，分开计算处理率与办结率</span>
+                </div>
+                <el-table :data="woSummaryData.city_stats" stripe border style="width: 100%" max-height="460">
+                  <el-table-column prop="city" label="地市" width="80" align="center" fixed></el-table-column>
+                  <el-table-column prop="group_total" label="集团工单" width="90" align="center" sortable>
+                    <template #default="scope">
+                      <span style="color: #409eff; font-weight: 600;">{{ scope.row.group_total }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="group_processed" label="集团已处理" width="95" align="center">
+                    <template #default="scope">
+                      <span style="color: #67c23a; font-weight: 600;">{{ scope.row.group_processed }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="group_rate" label="集团处理率" width="100" align="center" sortable>
+                    <template #default="scope">
+                      <el-tag :type="scope.row.group_rate >= 80 ? 'success' : (scope.row.group_rate >= 50 ? 'warning' : 'danger')" size="small">
+                        {{ scope.row.group_rate }}%
+                      </el-tag>
+                    </template>
+                  </el-table-column>
 
-        <div class="table-container">
-          <div style="font-weight: 600; margin-bottom: 12px; font-size: 15px;">后台小时抽取与分析流水</div>
-          <el-table :data="taskLogs" stripe border style="width: 100%" max-height="560">
-            <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
-            <el-table-column prop="task_name" label="任务标识" width="160"></el-table-column>
-            <el-table-column prop="data_hour" label="业务时段" width="180"></el-table-column>
-            <el-table-column prop="row_count" label="处理小区数" width="110" align="center"></el-table-column>
-            <el-table-column prop="status" label="状态" width="110" align="center">
-              <template #default="scope">
-                <el-tag :type="scope.row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">{{ scope.row.status }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="duration_sec" label="耗时(秒)" width="100" align="center"></el-table-column>
-            <el-table-column prop="created_at" label="执行完成时间" width="180"></el-table-column>
-          </el-table>
-        </div>
+                  <el-table-column prop="province_total" label="省内工单" width="90" align="center" sortable>
+                    <template #default="scope">
+                      <span style="color: #67c23a; font-weight: 600;">{{ scope.row.province_total }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="province_finished" label="省内办结" width="90" align="center">
+                    <template #default="scope">
+                      <span style="color: #67c23a; font-weight: 600;">{{ scope.row.province_finished }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="province_rate" label="省内办结率" width="100" align="center" sortable>
+                    <template #default="scope">
+                      <el-tag :type="scope.row.province_rate >= 80 ? 'success' : (scope.row.province_rate >= 50 ? 'warning' : 'danger')" size="small">
+                        {{ scope.row.province_rate }}%
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+
+                  <el-table-column prop="total" label="工单合计" width="95" align="center" sortable>
+                    <template #default="scope">
+                      <strong style="color: #f56c6c;">{{ scope.row.total }}</strong>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="finish_rate" label="综合完成率" width="105" align="center" sortable>
+                    <template #default="scope">
+                      <span style="font-weight: 700; color: #529b2e;">{{ scope.row.finish_rate }}%</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+
+              <!-- 最近工单流转动态 -->
+              <div class="table-container">
+                <div style="font-weight: 600; font-size: 15px; margin-bottom: 12px;">
+                  ⏱️ 最新工单动态 (最近 15 笔)
+                </div>
+                <el-table :data="woSummaryData.recent" stripe border style="width: 100%" max-height="460">
+                  <el-table-column label="类型" width="70" align="center">
+                    <template #default="scope">
+                      <el-tag :type="scope.row.order_type === 'group' ? 'primary' : 'success'" size="small">
+                        {{ scope.row.order_type === 'group' ? '集团' : '省内' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="city" label="地市" width="70" align="center"></el-table-column>
+                  <el-table-column prop="title" label="工单/小区标题" min-width="150" show-overflow-tooltip></el-table-column>
+                  <el-table-column prop="status" label="状态" width="95" align="center">
+                    <template #default="scope">
+                      <el-tag :type="scope.row.is_finished ? 'success' : 'warning'" size="small">
+                        {{ scope.row.status }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="create_time" label="生成时间" width="145"></el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <!-- 子标签 2: 集团工单 -->
+          <el-tab-pane label="🏢 集团工单 (方案库)" name="group">
+            <div class="filter-bar">
+              <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <el-select v-model="woGroupFilter.city" size="small" placeholder="地市" style="width: 110px;" @change="searchWoGroup">
+                  <el-option label="全部地市" value="全部"></el-option>
+                  <el-option v-for="c in woCities" :key="c" :label="c" :value="c"></el-option>
+                </el-select>
+
+                <el-date-picker v-model="woGroupFilter.range" type="daterange" size="small"
+                                range-separator="至" start-placeholder="派发开始" end-placeholder="派发结束"
+                                format="YYYY-MM-DD" value-format="YYYY-MM-DD" :clearable="true"
+                                @change="searchWoGroup"></el-date-picker>
+
+                <el-select v-model="woGroupFilter.status" size="small" placeholder="处理状态" style="width: 105px;" @change="searchWoGroup">
+                  <el-option label="全部状态" value="全部"></el-option>
+                  <el-option label="已处理" value="已处理"></el-option>
+                  <el-option label="未处理" value="未处理"></el-option>
+                </el-select>
+
+                <el-input v-model="woGroupFilter.keyword" size="small" placeholder="工单号/小区/聚类序号"
+                          style="width: 180px;" clearable @keyup.enter="searchWoGroup"></el-input>
+
+                <el-button type="primary" size="small" :icon="Refresh" :loading="woGroupLoading" @click="searchWoGroup">
+                  查询
+                </el-button>
+              </div>
+
+              <div style="display: flex; gap: 8px;">
+                <el-button size="small" type="success" :icon="Download" @click="exportWo('group')">
+                  导出集团工单Excel
+                </el-button>
+              </div>
+            </div>
+
+            <div class="table-container" v-loading="woGroupLoading">
+              <el-table :data="woGroupList" stripe border style="width: 100%" max-height="530">
+                <el-table-column prop="order_code" label="工单编号" width="220" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="cluster_code" label="聚类工单序号" width="160" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="city" label="地市" width="75" align="center"></el-table-column>
+                <el-table-column prop="cell_name" label="问题小区名" min-width="180" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="special_label" label="专项标签" width="120">
+                  <template #default="scope">
+                    <el-tag size="small" type="danger" effect="plain" v-if="scope.row.special_label">{{ scope.row.special_label }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="status" label="当前状态" width="105" align="center">
+                  <template #default="scope">
+                    <span style="font-weight: 500;">{{ scope.row.status }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="处理状态" width="110" align="center">
+                  <template #default="scope">
+                    <el-tag :type="scope.row.is_finished ? 'success' : 'warning'" size="small">
+                      {{ scope.row.is_manual_finished ? '已处理(手动)' : (scope.row.is_finished ? '已处理' : '未处理') }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="120" align="center" fixed="right">
+                  <template #default="scope">
+                    <el-button v-if="!scope.row.is_finished" size="small" type="success" plain
+                               :loading="woManualSavingId === scope.row.id"
+                               @click="toggleWoManualFinish(scope.row, 'group')">
+                      标记已处理
+                    </el-button>
+                    <el-button v-else-if="scope.row.is_manual_finished" size="small" type="info" plain
+                               :loading="woManualSavingId === scope.row.id"
+                               @click="toggleWoManualFinish(scope.row, 'group')">
+                      取消手动
+                    </el-button>
+                    <el-tag v-else type="success" size="small" effect="plain">系统已证实</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="cover_scene" label="覆盖场景" width="130" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="network_type" label="网络制式" width="85" align="center"></el-table-column>
+                <el-table-column prop="create_time" label="派发时间" width="160"></el-table-column>
+                <el-table-column prop="finish_time" label="方案确认时间" width="160"></el-table-column>
+              </el-table>
+
+              <div style="margin-top: 14px; display: flex; justify-content: flex-end;">
+                <el-pagination v-model:current-page="woGroupPage" v-model:page-size="woGroupPageSize"
+                               :page-sizes="[15, 30, 50, 100]" :total="woGroupTotal"
+                               layout="total, sizes, prev, pager, next, jumper" @size-change="onWoGroupSizeChange"
+                               @current-change="fetchWoGroupOrders"></el-pagination>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <!-- 子标签 3: 省内工单 -->
+          <el-tab-pane label="🌿 省内工单 (优化流程)" name="province">
+            <div class="filter-bar">
+              <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <el-select v-model="woProvinceFilter.city" size="small" placeholder="地市" style="width: 110px;" @change="searchWoProvince">
+                  <el-option label="全部地市" value="全部"></el-option>
+                  <el-option v-for="c in woCities" :key="c" :label="c" :value="c"></el-option>
+                </el-select>
+
+                <el-date-picker v-model="woProvinceFilter.range" type="daterange" size="small"
+                                range-separator="至" start-placeholder="创建开始" end-placeholder="创建结束"
+                                format="YYYY-MM-DD" value-format="YYYY-MM-DD" :clearable="true"
+                                @change="searchWoProvince"></el-date-picker>
+
+                <el-select v-model="woProvinceFilter.status" size="small" placeholder="工单状态" style="width: 105px;" @change="searchWoProvince">
+                  <el-option label="全部状态" value="全部"></el-option>
+                  <el-option label="已办结" value="已办结"></el-option>
+                  <el-option label="未办结" value="未办结"></el-option>
+                </el-select>
+
+                <el-select v-model="woProvinceFilter.ids" size="small" placeholder="IDS标记" style="width: 125px;" @change="searchWoProvince">
+                  <el-option label="全部工单" value="all"></el-option>
+                  <el-option label="仅非IDS工单" value="non_ids"></el-option>
+                  <el-option label="仅IDS工单" value="ids"></el-option>
+                </el-select>
+
+                <el-input v-model="woProvinceFilter.keyword" size="small" placeholder="工单号/标题"
+                          style="width: 180px;" clearable @keyup.enter="searchWoProvince"></el-input>
+
+                <el-button type="primary" size="small" :icon="Refresh" :loading="woProvinceLoading" @click="searchWoProvince">
+                  查询
+                </el-button>
+              </div>
+
+              <div style="display: flex; gap: 8px;">
+                <el-button size="small" type="success" :icon="Download" @click="exportWo('province')">
+                  导出省内工单Excel
+                </el-button>
+              </div>
+            </div>
+
+            <div class="table-container" v-loading="woProvinceLoading">
+              <el-table :data="woProvinceList" stripe border style="width: 100%" max-height="530">
+                <el-table-column prop="order_code" label="工单编号" width="220" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="city" label="地市" width="80" align="center"></el-table-column>
+                <el-table-column prop="title" label="标题/小区" min-width="200" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="process_name" label="流程定义名称" min-width="180" show-overflow-tooltip></el-table-column>
+                <el-table-column prop="current_node" label="当前处理节点" width="130" show-overflow-tooltip></el-table-column>
+                <el-table-column label="工单状态" width="115" align="center">
+                  <template #default="scope">
+                    <el-tag :type="scope.row.is_finished ? 'success' : 'warning'" size="small">
+                      {{ scope.row.is_manual_finished ? '已办结(手动)' : scope.row.status }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="120" align="center" fixed="right">
+                  <template #default="scope">
+                    <el-button v-if="!scope.row.is_finished" size="small" type="success" plain
+                               :loading="woManualSavingId === scope.row.id"
+                               @click="toggleWoManualFinish(scope.row, 'province')">
+                      标记已处理
+                    </el-button>
+                    <el-button v-else-if="scope.row.is_manual_finished" size="small" type="info" plain
+                               :loading="woManualSavingId === scope.row.id"
+                               @click="toggleWoManualFinish(scope.row, 'province')">
+                      取消手动
+                    </el-button>
+                    <el-tag v-else type="success" size="small" effect="plain">系统已证实</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="是否IDS工单" width="118" align="center">
+                  <template #header>
+                    <span>是否IDS工单</span>
+                    <el-tooltip placement="top" content="人工标记：标记为“是”的工单不参与省内工单统计计算（总数、办结率、地市分布），但仍保留在明细列表中">
+                      <el-icon style="margin-left: 3px; vertical-align: middle; color: #909399; cursor: help;"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </template>
+                  <template #default="scope">
+                    <el-switch v-model="scope.row.is_ids" :active-value="1" :inactive-value="0"
+                               inline-prompt active-text="是" inactive-text="否"
+                               :loading="woIdsSavingId === scope.row.id"
+                               @change="(val) => toggleWoIds(scope.row, val)"></el-switch>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="create_time" label="创建时间" width="160"></el-table-column>
+                <el-table-column prop="finish_time" label="办结时间" width="160"></el-table-column>
+              </el-table>
+
+              <div style="margin-top: 14px; display: flex; justify-content: flex-end;">
+                <el-pagination v-model:current-page="woProvincePage" v-model:page-size="woProvincePageSize"
+                               :page-sizes="[15, 30, 50, 100]" :total="woProvinceTotal"
+                               layout="total, sizes, prev, pager, next, jumper" @size-change="onWoProvinceSizeChange"
+                               @current-change="fetchWoProvinceOrders"></el-pagination>
+              </div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
       </div>
     </main>
   </div>
+  </template>
 
-  <el-dialog v-model="loginDialogVisible" title="NQI 会话认证与登录续期" width="400px">
-    <el-form :model="loginForm" label-width="70px" size="default">
+  <!-- ============ NQI 登录续期弹窗 ============ -->
+  <el-dialog v-model="loginDialogVisible" title="NQI 会话认证与登录续期" width="420px">
+    <el-form :model="loginForm" label-width="75px" size="default">
       <el-form-item label="账号">
         <el-input v-model="loginForm.username" placeholder="请输入NQI账号"></el-input>
       </el-form-item>
       <el-form-item label="密码">
         <el-input v-model="loginForm.password" type="password" show-password placeholder="请输入密码"></el-input>
       </el-form-item>
-      <el-form-item label="验证码">
-        <div style="display: flex; gap: 8px;">
-          <el-input v-model="loginForm.captcha" placeholder="验证码"></el-input>
-          <div style="width: 100px; height: 32px; background: #eee; cursor: pointer; display: flex; align-items: center; justify-content: center;" @click="refreshCaptcha">
+      <el-form-item label="图形码">
+        <div style="display: flex; gap: 8px; width: 100%;">
+          <el-input v-model="loginForm.captcha" placeholder="输入图形验证码"></el-input>
+          <div style="width: 110px; height: 32px; background: #eee; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 4px; overflow: hidden;" @click="refreshCaptcha" title="点击刷新验证码">
             <img v-if="captchaImg" :src="captchaImg" style="width: 100%; height: 100%; object-fit: cover;" />
             <span v-else style="font-size: 11px; color: #888;">点击获取</span>
           </div>
         </div>
       </el-form-item>
+      <el-form-item label="短信码" v-if="showSmsInput">
+        <el-input v-model="loginForm.msg_code" placeholder="请输入手机收到的短信验证码"></el-input>
+      </el-form-item>
     </el-form>
+    <div v-if="showSmsInput" style="font-size: 12px; color: #67C23A; margin: -5px 0 15px 75px;">
+      ✓ 图形码验证通过，短信已下发，请输入短信码完成登录
+    </div>
     <template #footer>
       <span class="dialog-footer">
         <el-button @click="loginDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="loginLoading" @click="submitLogin">提交续期</el-button>
+        <el-button type="primary" :loading="loginLoading" @click="submitLogin">
+          {{ showSmsInput ? '确认登录' : '验证图形码并发送短信' }}
+        </el-button>
       </span>
     </template>
   </el-dialog>
 </div>
 
 <script>
-  const { createApp, ref, computed, onMounted } = Vue;
+  const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
   const { ElMessage } = ElementPlus;
-  const { Timer, DataAnalysis, Calendar, Operation, Refresh, Download } = ElementPlusIconsVue;
+  const { Refresh, Download, Tickets } = ElementPlusIconsVue;
 
   const app = createApp({
     setup() {
-      const activeNav = ref('latest');
-      const dbEngine = ref('SQLite / MySQL');
+      const activeNav = ref('workorder');
+      const dbEngine = ref('SQLite');
       const authInfo = ref({ global_status: 'ACTIVE', cookie_status: 'VALID' });
-      const latestHour = ref('');
-      
-      const latestData = ref({ latest_hour: '', total_issues: 0, repeated_8h_count: 0, g4_count: 0, g5_count: 0, issue_records: [] });
-      const latestSearch = ref('');
-      const selectedCity = ref('');
-      const onlyRepeated = ref(false);
 
-      const dailyData = ref({ date: '', total_degraded_cells: 0, total_overclock_cells: 0, top_cells: [] });
-      const weeklyData = ref({ cycle_title: '', total_impacted_cells: 0, focus_overclock_cells_count: 0, focus_cells: [] });
-      const taskLogs = ref([]);
-      const backfillRange = ref([]);
+      // ---- 平台登录 (普通用户/管理员) ----
+      const isLoggedIn = ref(false);
+      const platformLoading = ref(false);
+      const platformForm = ref({ username: '', password: '' });
+      const currentUser = ref({ username: '', role: 'user', display_name: '', allowed_views: [] });
+      const isAdmin = computed(() => currentUser.value.role === 'admin');
 
+      // NQI 登录续期
       const loginDialogVisible = ref(false);
       const loginLoading = ref(false);
-      const loginForm = ref({ username: 'dwlianchangli', password: '***REMOVED***', captcha: '' });
+      const showSmsInput = ref(false);
+      const loginForm = ref({ username: 'dwlianchangli', password: '***REMOVED***', captcha: '', msg_code: '' });
       const captchaImg = ref('');
 
-      const cityOptions = computed(() => {
-        const set = new Set();
-        (latestData.value.issue_records || []).forEach(r => { if (r.city) set.add(r.city); });
-        return Array.from(set);
-      });
+      // 统一封装的带令牌请求
+      const apiFetch = async (url, opts = {}) => {
+        const headers = opts.headers || {};
+        const token = localStorage.getItem('platform_token');
+        if (token) headers['X-User-Token'] = token;
+        const res = await fetch(url, { ...opts, headers });
+        return res;
+      };
 
-      const filteredLatestRecords = computed(() => {
-        return (latestData.value.issue_records || []).filter(r => {
-          const matchWord = !latestSearch.value || (r.cell_name && r.cell_name.includes(latestSearch.value)) || (r.cell_id && r.cell_id.includes(latestSearch.value));
-          const matchCity = !selectedCity.value || r.city === selectedCity.value;
-          const matchRepeated = !onlyRepeated.value || r.is_repeated_8h === 1;
-          return matchWord && matchCity && matchRepeated;
-        });
-      });
+      // ---- 平台登录/登出 ----
+      const submitPlatformLogin = async () => {
+        if (!platformForm.value.username || !platformForm.value.password) {
+          ElMessage.warning('请输入账号和密码');
+          return;
+        }
+        platformLoading.value = true;
+        try {
+          const res = await fetch('/api/user/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(platformForm.value)
+          }).then(r => r.json());
+          if (res.success) {
+            localStorage.setItem('platform_token', res.token);
+            currentUser.value = { username: res.username, role: res.role, display_name: res.display_name, allowed_views: res.allowed_views };
+            isLoggedIn.value = true;
+            ElMessage.success(res.message);
+            refreshAuthStatus();
+            fetchWoCities();
+            fetchWoSummary();
+            startWoPolling();
+          } else {
+            ElMessage.error(res.message || '登录失败');
+          }
+        } catch (e) {
+          ElMessage.error('登录请求异常');
+        } finally {
+          platformLoading.value = false;
+        }
+      };
 
-      const handleNavSelect = (key) => {
-        activeNav.value = key;
-        if (key === 'latest') fetchLatestData();
-        else if (key === 'daily') fetchDailyData();
-        else if (key === 'weekly') fetchWeeklyData();
-        else if (key === 'tasks') fetchTaskLogs();
+      const logoutPlatform = () => {
+        apiFetch('/api/user/logout', { method: 'POST' }).catch(() => {});
+        localStorage.removeItem('platform_token');
+        isLoggedIn.value = false;
+        currentUser.value = { username: '', role: 'user', display_name: '', allowed_views: [] };
+        platformForm.value = { username: '', password: '' };
+        stopWoPolling();
+        ElMessage.info('已退出登录');
+      };
+
+      // 启动时用本地缓存令牌恢复会话
+      const restoreSession = async () => {
+        const token = localStorage.getItem('platform_token');
+        if (!token) return;
+        try {
+          const res = await fetch('/api/user/profile', { headers: { 'X-User-Token': token } }).then(r => r.json());
+          if (res.logged_in) {
+            currentUser.value = { username: res.username, role: res.role, display_name: res.display_name, allowed_views: res.allowed_views };
+            isLoggedIn.value = true;
+          } else {
+            localStorage.removeItem('platform_token');
+          }
+        } catch (e) {
+          console.error(e);
+        }
       };
 
       const refreshAuthStatus = async () => {
@@ -376,70 +606,16 @@
         }
       };
 
-      const fetchLatestData = async () => {
-        try {
-          const res = await fetch('/api/monitor/latest').then(r => r.json());
-          latestData.value = res;
-          latestHour.value = res.latest_hour;
-        } catch (e) {
-          ElMessage.error('获取最新时段失败');
-        }
+      const handleNavSelect = (key) => {
+        activeNav.value = key;
+        if (key === 'workorder') { fetchWoCities(); fetchWoSummary(); startWoPolling(); }
       };
 
-      const fetchDailyData = async () => {
-        try {
-          const res = await fetch('/api/monitor/daily').then(r => r.json());
-          dailyData.value = res;
-        } catch (e) {
-          ElMessage.error('获取本日超频失败');
-        }
-      };
-
-      const fetchWeeklyData = async () => {
-        try {
-          const res = await fetch('/api/monitor/weekly').then(r => r.json());
-          weeklyData.value = res;
-        } catch (e) {
-          ElMessage.error('获取周考核数据失败');
-        }
-      };
-
-      const fetchTaskLogs = async () => {
-        try {
-          const res = await fetch('/api/tasks/logs').then(r => r.json());
-          taskLogs.value = res;
-        } catch (e) {
-          ElMessage.error('获取任务流水失败');
-        }
-      };
-
-      const exportLatestExcel = () => {
-        window.open('/api/export/latest', '_blank');
-      };
-
-      const exportWeeklyExcel = () => {
-        window.open('/api/export/weekly', '_blank');
-      };
-
-      const submitBackfill = async () => {
-        if (!backfillRange.value || backfillRange.value.length !== 2) {
-          ElMessage.warning('请选择补采的起止时间范围');
-          return;
-        }
-        try {
-          const res = await fetch('/api/tasks/backfill', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ start_hour: backfillRange.value[0], end_hour: backfillRange.value[1] })
-          }).then(r => r.json());
-          ElMessage.success(res.message);
-        } catch (e) {
-          ElMessage.error('补采请求提交失败');
-        }
-      };
-
+      // ---- NQI 登录续期 ----
       const openLoginDialog = () => {
         loginDialogVisible.value = true;
+        showSmsInput.value = false;
+        loginForm.value.msg_code = "";
         refreshCaptcha();
       };
 
@@ -463,7 +639,12 @@
           if (res.success) {
             ElMessage.success(res.message);
             loginDialogVisible.value = false;
+            showSmsInput.value = false;
+            loginForm.value.msg_code = '';
             refreshAuthStatus();
+          } else if (res.need_sms_code) {
+            ElMessage.info(res.message);
+            showSmsInput.value = true;
           } else {
             ElMessage.error(res.message);
             refreshCaptcha();
@@ -475,19 +656,388 @@
         }
       };
 
-      onMounted(() => {
-        refreshAuthStatus();
-        fetchLatestData();
+      // ==========================================
+      // 工单监控相关状态与逻辑
+      // ==========================================
+      const woTab = ref('summary');
+      const woCities = ref([]);
+      const woCollectLoading = ref(false);
+
+      // --- 1. 工单汇总 ---
+      const woSummaryCities = ref([]);
+      const summaryCitiesLabel = computed(() => {
+        const arr = woSummaryCities.value || [];
+        if (!arr.length) return '全省汇总';
+        if (arr.length <= 3) return arr.join('、');
+        return `${arr.slice(0, 3).join('、')} 等 ${arr.length} 个地市`;
+      });
+      // 默认最近 7 天
+      const initWoEndDate = new Date();
+      const initWoStartDate = new Date();
+      initWoStartDate.setDate(initWoEndDate.getDate() - 6);
+      const fmtDateStr = (d) => d.toISOString().slice(0, 10);
+      const woSummaryRange = ref([fmtDateStr(initWoStartDate), fmtDateStr(initWoEndDate)]);
+      const woSummaryLoading = ref(false);
+      const woSummaryData = ref({
+        cards: { group: {}, province: {}, total: {} },
+        city_stats: [],
+        recent: [],
+        last_collect_time: ''
+      });
+
+      // --- 2. 集团工单 ---
+      const woGroupList = ref([]);
+      const woGroupTotal = ref(0);
+      const woGroupPage = ref(1);
+      const woGroupPageSize = ref(15);
+      const woGroupLoading = ref(false);
+      const woGroupFilter = ref({
+        city: '全部',
+        range: [],
+        status: '全部',
+        keyword: ''
+      });
+
+      // --- 3. 省内工单 ---
+      const woProvinceList = ref([]);
+      const woProvinceTotal = ref(0);
+      const woProvincePage = ref(1);
+      const woProvincePageSize = ref(15);
+      const woProvinceLoading = ref(false);
+      const woProvinceFilter = ref({
+        city: '全部',
+        range: [],
+        status: '全部',
+        ids: 'all',
+        keyword: ''
+      });
+      const woIdsSavingId = ref(0);   // 正在提交 IDS 标记的工单 id (用于开关 loading)
+      const woManualSavingId = ref(0); // 正在提交手动已处理标记的工单 id
+
+      const fetchWoCities = async () => {
+        try {
+          const res = await apiFetch('/api/workorder/cities');
+          const d = await res.json();
+          if (d && d.cities) {
+            woCities.value = d.cities;
+          }
+        } catch (e) {
+          console.error('获取地市列表失败', e);
+        }
+      };
+
+      const fetchWoSummary = async () => {
+        woSummaryLoading.value = true;
+        try {
+          const citiesVal = (woSummaryCities.value || []).join(',');
+          let qs = `?cities=${encodeURIComponent(citiesVal)}`;
+          if (woSummaryRange.value && woSummaryRange.value.length === 2) {
+            qs += `&start_date=${encodeURIComponent(woSummaryRange.value[0])}&end_date=${encodeURIComponent(woSummaryRange.value[1])}`;
+          }
+          const res = await apiFetch(`/api/workorder/summary${qs}`);
+          const d = await res.json();
+          if (d && d.cards) {
+            woSummaryData.value = d;
+          }
+        } catch (e) {
+          ElMessage.error('获取工单汇总数据失败');
+        } finally {
+          woSummaryLoading.value = false;
+        }
+      };
+
+      const fetchWoGroupOrders = async () => {
+        woGroupLoading.value = true;
+        try {
+          let qs = `?type=group&page=${woGroupPage.value}&page_size=${woGroupPageSize.value}`;
+          if (woGroupFilter.value.city && woGroupFilter.value.city !== '全部') {
+            qs += `&city=${encodeURIComponent(woGroupFilter.value.city)}`;
+          }
+          if (woGroupFilter.value.status && woGroupFilter.value.status !== '全部') {
+            qs += `&status=${encodeURIComponent(woGroupFilter.value.status)}`;
+          }
+          if (woGroupFilter.value.keyword) {
+            qs += `&keyword=${encodeURIComponent(woGroupFilter.value.keyword.trim())}`;
+          }
+          if (woGroupFilter.value.range && woGroupFilter.value.range.length === 2) {
+            qs += `&start_date=${encodeURIComponent(woGroupFilter.value.range[0])}&end_date=${encodeURIComponent(woGroupFilter.value.range[1])}`;
+          }
+          const res = await apiFetch(`/api/workorder/orders${qs}`);
+          const d = await res.json();
+          if (d && d.records) {
+            woGroupList.value = d.records;
+            woGroupTotal.value = d.total;
+          }
+        } catch (e) {
+          ElMessage.error('获取集团工单失败');
+        } finally {
+          woGroupLoading.value = false;
+        }
+      };
+
+      const searchWoGroup = () => {
+        woGroupPage.value = 1;
+        fetchWoGroupOrders();
+      };
+
+      const onWoGroupSizeChange = (sz) => {
+        woGroupPageSize.value = sz;
+        woGroupPage.value = 1;
+        fetchWoGroupOrders();
+      };
+
+      const fetchWoProvinceOrders = async () => {
+        woProvinceLoading.value = true;
+        try {
+          let qs = `?type=province&page=${woProvincePage.value}&page_size=${woProvincePageSize.value}`;
+          if (woProvinceFilter.value.city && woProvinceFilter.value.city !== '全部') {
+            qs += `&city=${encodeURIComponent(woProvinceFilter.value.city)}`;
+          }
+          if (woProvinceFilter.value.status && woProvinceFilter.value.status !== '全部') {
+            qs += `&status=${encodeURIComponent(woProvinceFilter.value.status)}`;
+          }
+          if (woProvinceFilter.value.ids && woProvinceFilter.value.ids !== 'all') {
+            qs += `&ids=${encodeURIComponent(woProvinceFilter.value.ids)}`;
+          }
+          if (woProvinceFilter.value.keyword) {
+            qs += `&keyword=${encodeURIComponent(woProvinceFilter.value.keyword.trim())}`;
+          }
+          if (woProvinceFilter.value.range && woProvinceFilter.value.range.length === 2) {
+            qs += `&start_date=${encodeURIComponent(woProvinceFilter.value.range[0])}&end_date=${encodeURIComponent(woProvinceFilter.value.range[1])}`;
+          }
+          const res = await apiFetch(`/api/workorder/orders${qs}`);
+          const d = await res.json();
+          if (d && d.records) {
+            woProvinceList.value = d.records;
+            woProvinceTotal.value = d.total;
+          }
+        } catch (e) {
+          ElMessage.error('获取省内工单失败');
+        } finally {
+          woProvinceLoading.value = false;
+        }
+      };
+
+      const searchWoProvince = () => {
+        woProvincePage.value = 1;
+        fetchWoProvinceOrders();
+      };
+
+      const onWoProvinceSizeChange = (sz) => {
+        woProvincePageSize.value = sz;
+        woProvincePage.value = 1;
+        fetchWoProvinceOrders();
+      };
+
+      // 人工标记"是否IDS工单": 标记为是则不计入省内工单统计口径
+      const toggleWoIds = async (row, val) => {
+        const want = val === 1;
+        woIdsSavingId.value = row.id;
+        try {
+          const res = await apiFetch(`/api/workorder/orders/${row.id}/ids`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_ids: want })
+          });
+          const d = await res.json();
+          if (res.ok && d.success) {
+            // 当前筛选条件与标记结果冲突时(如只看非IDS)，本地剔除该行，避免状态与筛选不一致
+            const f = woProvinceFilter.value.ids;
+            if ((f === 'non_ids' && want) || (f === 'ids' && !want)) {
+              woProvinceList.value = woProvinceList.value.filter(r => r.id !== row.id);
+              woProvinceTotal.value = Math.max(0, woProvinceTotal.value - 1);
+            }
+            ElMessage.success(want ? '已标记为 IDS 工单，不再参与统计计算' : '已取消 IDS 标记，重新参与统计计算');
+            fetchWoSummary();
+          } else {
+            row.is_ids = want ? 0 : 1;
+            ElMessage.error(d.detail || d.message || '标记失败');
+          }
+        } catch (e) {
+          row.is_ids = want ? 0 : 1;
+          ElMessage.error('标记失败，请重试');
+        } finally {
+          woIdsSavingId.value = 0;
+        }
+      };
+
+      // 人工标记工单为已处理 / 取消人工标记
+      // 集团与省内工单共用同一接口; 标记后计入已处理统计, 后续自动拉取证明已办结会自动清除手动标记
+      const toggleWoManualFinish = async (row, orderType) => {
+        const wasManual = (row.is_manual_finished || 0) === 1;
+        const wantFinished = !wasManual; // 点击未处理行 -> 标记已处理; 点击已手动处理行 -> 取消
+        woManualSavingId.value = row.id;
+        try {
+          const res = await apiFetch(`/api/workorder/orders/${row.id}/manual-finish`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_finished: wantFinished })
+          });
+          const d = await res.json();
+          if (res.ok && d.success) {
+            row.is_finished = d.is_finished;
+            row.is_manual_finished = d.is_manual_finished;
+            // 若状态筛选与新状态冲突, 本地剔除该行
+            const filterKey = orderType === 'group' ? woGroupFilter.value.status : woProvinceFilter.value.status;
+            const newFinished = d.is_finished === 1;
+            const conflict =
+              (filterKey === '已处理' && !newFinished) ||
+              (filterKey === '未处理' && newFinished) ||
+              (filterKey === '已办结' && !newFinished) ||
+              (filterKey === '未办结' && newFinished);
+            if (conflict) {
+              if (orderType === 'group') {
+                woGroupList.value = woGroupList.value.filter(r => r.id !== row.id);
+                woGroupTotal.value = Math.max(0, woGroupTotal.value - 1);
+              } else {
+                woProvinceList.value = woProvinceList.value.filter(r => r.id !== row.id);
+                woProvinceTotal.value = Math.max(0, woProvinceTotal.value - 1);
+              }
+            }
+            ElMessage.success(wantFinished ? '已标记为已处理（手动），计入统计' : '已取消人工标记，恢复为未处理');
+            fetchWoSummary();
+          } else {
+            ElMessage.error(d.detail || d.message || '操作失败');
+          }
+        } catch (e) {
+          ElMessage.error('操作失败，请重试');
+        } finally {
+          woManualSavingId.value = 0;
+        }
+      };
+
+      const handleWoTabClick = (tab) => {
+        if (tab.props.name === 'summary') {
+          fetchWoSummary();
+        } else if (tab.props.name === 'group') {
+          if (woGroupList.value.length === 0) fetchWoGroupOrders();
+        } else if (tab.props.name === 'province') {
+          if (woProvinceList.value.length === 0) fetchWoProvinceOrders();
+        }
+      };
+
+      const openWoCollectDialog = async () => {
+        let sDate = woSummaryRange.value?.[0] || fmtDateStr(initWoStartDate);
+        let eDate = woSummaryRange.value?.[1] || fmtDateStr(initWoEndDate);
+        const cityParam = (woSummaryCities.value && woSummaryCities.value.length === 1) ? woSummaryCities.value[0] : '';
+        woCollectLoading.value = true;
+        try {
+          const res = await apiFetch('/api/workorder/collect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              start_date: sDate,
+              end_date: eDate,
+              city: cityParam,
+              scope: 'all'
+            })
+          });
+          const d = await res.json();
+          if (res.ok && d.success) {
+            ElMessage.success(d.message || '已触发后台增量采集，请稍候刷新');
+            setTimeout(() => { fetchWoSummary(); }, 3000);
+          } else {
+            ElMessage.error(d.detail || d.message || '采集触发失败');
+          }
+        } catch (e) {
+          ElMessage.error('触发采集异常');
+        } finally {
+          woCollectLoading.value = false;
+        }
+      };
+
+      const exportWo = (type) => {
+        let qs = `?type=${encodeURIComponent(type)}`;
+        if (type === 'all') {
+          const citiesVal = (woSummaryCities.value || []).join(',');
+          if (citiesVal) {
+            qs += `&cities=${encodeURIComponent(citiesVal)}`;
+          }
+          if (woSummaryRange.value && woSummaryRange.value.length === 2) {
+            qs += `&start_date=${encodeURIComponent(woSummaryRange.value[0])}&end_date=${encodeURIComponent(woSummaryRange.value[1])}`;
+          }
+        } else if (type === 'group') {
+          if (woGroupFilter.value.city && woGroupFilter.value.city !== '全部') {
+            qs += `&city=${encodeURIComponent(woGroupFilter.value.city)}`;
+          }
+          if (woGroupFilter.value.status && woGroupFilter.value.status !== '全部') {
+            qs += `&status=${encodeURIComponent(woGroupFilter.value.status)}`;
+          }
+          if (woGroupFilter.value.keyword) {
+            qs += `&keyword=${encodeURIComponent(woGroupFilter.value.keyword.trim())}`;
+          }
+          if (woGroupFilter.value.range && woGroupFilter.value.range.length === 2) {
+            qs += `&start_date=${encodeURIComponent(woGroupFilter.value.range[0])}&end_date=${encodeURIComponent(woGroupFilter.value.range[1])}`;
+          }
+        } else if (type === 'province') {
+          if (woProvinceFilter.value.city && woProvinceFilter.value.city !== '全部') {
+            qs += `&city=${encodeURIComponent(woProvinceFilter.value.city)}`;
+          }
+          if (woProvinceFilter.value.status && woProvinceFilter.value.status !== '全部') {
+            qs += `&status=${encodeURIComponent(woProvinceFilter.value.status)}`;
+          }
+          if (woProvinceFilter.value.ids && woProvinceFilter.value.ids !== 'all') {
+            qs += `&ids=${encodeURIComponent(woProvinceFilter.value.ids)}`;
+          }
+          if (woProvinceFilter.value.keyword) {
+            qs += `&keyword=${encodeURIComponent(woProvinceFilter.value.keyword.trim())}`;
+          }
+          if (woProvinceFilter.value.range && woProvinceFilter.value.range.length === 2) {
+            qs += `&start_date=${encodeURIComponent(woProvinceFilter.value.range[0])}&end_date=${encodeURIComponent(woProvinceFilter.value.range[1])}`;
+          }
+        }
+        window.open(`/api/export/workorder${qs}`, '_blank');
+      };
+
+      // 工单页面自动静默轮询 (每 60 秒刷新一次看板与列表数据)
+      let woPollingTimer = null;
+      const startWoPolling = () => {
+        stopWoPolling();
+        woPollingTimer = setInterval(() => {
+          if (activeNav.value === 'workorder') {
+            if (woTab.value === 'summary') fetchWoSummary();
+            else if (woTab.value === 'group') fetchWoGroupOrders();
+            else if (woTab.value === 'province') fetchWoProvinceOrders();
+          }
+        }, 60000);
+      };
+      const stopWoPolling = () => {
+        if (woPollingTimer) {
+          clearInterval(woPollingTimer);
+          woPollingTimer = null;
+        }
+      };
+
+      onMounted(async () => {
+        await restoreSession();
+        if (isLoggedIn.value) {
+          refreshAuthStatus();
+          fetchWoCities();
+          fetchWoSummary();
+          startWoPolling();
+        }
+      });
+
+      onUnmounted(() => {
+        stopWoPolling();
       });
 
       return {
-        activeNav, dbEngine, authInfo, latestHour,
-        latestData, latestSearch, selectedCity, onlyRepeated, cityOptions, filteredLatestRecords,
-        dailyData, weeklyData, taskLogs, backfillRange,
-        loginDialogVisible, loginLoading, loginForm, captchaImg,
-        handleNavSelect, refreshAuthStatus, fetchLatestData, fetchDailyData, fetchWeeklyData, fetchTaskLogs,
-        exportLatestExcel, exportWeeklyExcel, submitBackfill, openLoginDialog, refreshCaptcha, submitLogin,
-        Timer, DataAnalysis, Calendar, Operation, Refresh, Download
+        activeNav, dbEngine, authInfo,
+        loginDialogVisible, loginLoading, showSmsInput, loginForm, captchaImg,
+        isLoggedIn, platformLoading, platformForm, currentUser, isAdmin,
+        submitPlatformLogin, logoutPlatform,
+        handleNavSelect, refreshAuthStatus, openLoginDialog, refreshCaptcha, submitLogin,
+        // 工单监控
+        woTab, woCities, woCollectLoading,
+        woSummaryCities, summaryCitiesLabel, woSummaryRange, woSummaryLoading, woSummaryData, fetchWoCities, fetchWoSummary,
+        woGroupList, woGroupTotal, woGroupPage, woGroupPageSize, woGroupLoading, woGroupFilter,
+        fetchWoGroupOrders, searchWoGroup, onWoGroupSizeChange,
+        woProvinceList, woProvinceTotal, woProvincePage, woProvincePageSize, woProvinceLoading, woProvinceFilter,
+        fetchWoProvinceOrders, searchWoProvince, onWoProvinceSizeChange, toggleWoIds, woIdsSavingId,
+        toggleWoManualFinish, woManualSavingId,
+        handleWoTabClick, openWoCollectDialog, exportWo,
+        Refresh, Download, Tickets
       };
     }
   });
