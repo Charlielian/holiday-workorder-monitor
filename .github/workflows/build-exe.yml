@@ -42,12 +42,15 @@ jobs:
           --collect-submodules Cryptodome
           main.py
 
+      # 打包产物只需前端静态资源与示例配置，故只复制 web/static 与 config.example.yaml；
+      # 后端 .py 源码已全部打进 exe 的 PYZ，跟随 web 目录复制既无用又暴露源码。
       - name: 组装绿色便携目录
         shell: pwsh
         run: |
           $dist = "dist/holiday-workorder-monitor"
-          Copy-Item -Recurse -Force "web"    "$dist/web"
-          Copy-Item -Recurse -Force "config" "$dist/config"
+          New-Item -ItemType Directory -Force -Path "$dist/web", "$dist/config" | Out-Null
+          Copy-Item -Recurse -Force "web/static" "$dist/web/static"
+          Copy-Item -Force "config/config.example.yaml" "$dist/config/config.example.yaml"
           New-Item -ItemType Directory -Force -Path "$dist/data", "$dist/logs" | Out-Null
 
       - name: 压缩为 zip
